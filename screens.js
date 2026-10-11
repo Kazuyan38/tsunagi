@@ -10,7 +10,6 @@ function screenOn(handlers) {
 const greet = () => { const h = new Date().getHours(); return h < 5 ? "おつかれさまです" : h < 11 ? "おはようございます" : h < 18 ? "こんにちは" : "おつかれさまです"; };
 
 /* ================================================================ ホーム */
-let homeOrb = null;
 async function renderHome(el) {
   const d = new Date();
   el.innerHTML = `<div class="home">
@@ -18,7 +17,6 @@ async function renderHome(el) {
       <div class="home-greet"><div class="muted small">${d.getMonth() + 1}月${d.getDate()}日（${WD[d.getDay()]}）</div>
         <h1>${greet()}、${esc(S.me.name.split(/\s/).pop())}さん</h1>
         <p class="home-summary muted">読み込み中…</p></div>
-      <div class="orb-wrap home-orb"></div>
     </header>
     <div class="home-grid">
       <section class="card home-card" data-k="attention"><h2 class="section-title">${icon("chat")} 未読のメッセージ</h2><div class="hc-body"></div></section>
@@ -27,10 +25,6 @@ async function renderHome(el) {
       <section class="card home-card" data-k="shift"><h2 class="section-title">${icon("shift")} 今日のシフト</h2><div class="hc-body"></div></section>
       <section class="card home-card" data-k="tasks"><h2 class="section-title">${icon("task")} あなたの担当タスク</h2><div class="hc-body"><div class="muted small">読み込み中…</div></div></section>
     </div></div>`;
-  const orbWrap = $(".home-orb", el);
-  homeOrb = window.TeamOrb ? new TeamOrb(orbWrap, { onPick: async p => { const r = await api("/api/dm", { method: "POST", body: { user_ids: [p.id] } }); await loadChannels(); UI.openChannel(r.id); } }) : null;
-  const drawOrb = () => homeOrb && homeOrb.set(Object.values(S.users).map(u => ({ ...u, online: S.online.has(u.id) || u.id === S.me.id })), S.me.id);
-  drawOrb();
 
   const load = async () => {
     const h = await api("/api/home");
@@ -65,7 +59,7 @@ async function renderHome(el) {
     const ev = e.target.closest("[data-ev]"); if (ev) return UI.go("calendar");
     const tt = e.target.closest("[data-tt]"); if (tt) return openTeamTask(+tt.dataset.tt);
   };
-  screenOn({ channels: () => load(), presence: drawOrb, users: drawOrb, mail: load, mail_read: load, events: load, shifts: load, team_tasks: loadTasks });
+  screenOn({ channels: () => load(), mail: load, mail_read: load, events: load, shifts: load, team_tasks: loadTasks });
   await load(); loadTasks();
 }
 

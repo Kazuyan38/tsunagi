@@ -364,18 +364,6 @@ button.read-mark:hover { background: var(--bg-2); color: var(--ink-2); }
 .kv dt { color: var(--muted); font-size: 12.5px; padding-top: 2px; }
 .kv dd { margin: 0; word-break: break-all; }
 
-/* 3D キャンバス */
-.orb-wrap { position: relative; border-radius: 20px; overflow: hidden; background: linear-gradient(180deg, #fbfcff, #eef1f8); border: 1px solid var(--line); }
-.orb-wrap canvas { display: block; width: 100%; height: 100%; }
-.orb-label {
-  position: absolute; transform: translate(-50%, 0); font-size: 11.5px; font-weight: 700; color: var(--ink-2);
-  background: rgba(255,255,255,.85); padding: 1px 8px; border-radius: 99px; white-space: nowrap; pointer-events: auto;
-  box-shadow: var(--shadow-1); border: 1px solid var(--line); backdrop-filter: blur(4px);
-}
-.orb-label:hover { color: var(--accent); border-color: var(--accent-line); }
-.orb-label.off { color: var(--muted); font-weight: 600; }
-.orb-fallback { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 18px; flex-wrap: wrap; padding: 20px; }
-
 /* ログイン（フクロウ） */
 .login {
   min-height: 100%; display: grid; place-items: center; padding: 28px 16px calc(28px + env(safe-area-inset-bottom));
@@ -452,11 +440,10 @@ button.read-mark:hover { background: var(--bg-2); color: var(--ink-2); }
 
 /* ホーム */
 .home { padding: 22px 28px 40px; max-width: 1280px; margin: 0 auto; }
-.home-hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 20px; align-items: stretch; margin-bottom: 20px; }
+.home-hero { display: block; margin-bottom: 20px; }
 .home-greet { display: flex; flex-direction: column; justify-content: center; padding: 8px 4px; }
 .home-greet h1 { font-size: clamp(22px, 2.6vw, 30px); margin: 2px 0 8px; letter-spacing: .02em; line-height: 1.35; }
 .home-summary { margin: 0; font-size: 15px; }
-.home-orb { height: 230px; }
 .home-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 16px; align-items: start; }
 .home-card { padding: 16px 16px 10px; }
 .home-card .list { margin: 0 -16px; }
