@@ -774,6 +774,7 @@ async function renderAdmin(el) {
       <section class="card admin-card" data-k="members"><h2>メンバー</h2><p class="desc">利用停止にすると、その人はすぐにどのデータも読めなくなります（データは残ります）。</p><div class="body"></div></section>
       <section class="card admin-card" data-k="mail"><h2>共有 Gmail</h2><p class="desc">Gmail の 2 段階認証を有効にし、アプリパスワード（16 桁）を発行して入力します。パスワードはサーバにだけ保存され、画面には二度と表示されません。</p><div class="body"></div></section>
       <section class="card admin-card" data-k="repo"><h2>GitHub リポジトリ</h2><p class="desc">会社の資料リポジトリを「リポジトリ」画面で読めるようにします。<b>読み取り専用</b>の Fine-grained トークン（対象リポジトリだけ・Contents: Read-only）を使ってください。トークンはサーバにだけ保存され、画面には二度と表示されません。</p><div class="body"></div></section>
+      <section class="card admin-card" data-k="ai"><h2>owl の AI</h2><p class="desc">フクロウとのチャットに使う AI です。どちらも OpenAI（米国）の「gpt-oss」を無料枠で使います。ふだんは Cloudflare、その日の無料枠が尽きたら予備の Groq に切り替え、Cloudflare の枠が戻る毎朝 9 時に自動で戻ります。トークンはサーバにだけ保存され、画面には二度と表示されません。会話はサーバに残りません。</p><div class="body"></div></section>
       <section class="card admin-card" data-k="team"><h2>チームとデータ</h2><p class="desc">チーム名の変更と、データの書き出し（バックアップ）。</p><div class="body"></div></section>
       <section class="card admin-card" data-k="audit" style="grid-column:1/-1"><h2>監査ログ</h2><p class="desc">誰がいつ何をしたか（直近 100 件）。</p><div class="body"></div></section>
     </div></div>`;
@@ -867,6 +868,51 @@ async function renderAdmin(el) {
     const c = $("[data-repoclear]", el);
     if (c) c.onclick = async () => { if (await confirmBox("リポジトリの接続を解除しますか？（検索の索引も消えます）", "解除", true)) { await repoCall({ action: "clear_config" }); repoBox(); audit(); } };
   };
+  const aiBox = async () => {
+    const st = must(await SB.rpc("ai_status"));
+    const fmt = ts => ts ? `${fmtDay(localISO(ts))} ${fmtTime(localISO(ts))}` : "—";
+    const resting = st.cf_paused_until && new Date(st.cf_paused_until) > new Date();
+    const now = !st.configured ? "○ 未設定（フクロウは「まだ AI がつながっていない」と答えます）"
+      : resting ? (st.groq ? `<span style="color:var(--warn)">● 予備の Groq で動作中</span>（Cloudflare の無料枠は ${fmt(st.cf_paused_until)} に戻り、自動で切り替わります）` : `<span style="color:var(--warn)">● Cloudflare の今日の無料枠を使い切りました</span>（${fmt(st.cf_paused_until)} に戻ります）`)
+      : `<span style="color:var(--ok)">● ${st.cloudflare ? "Cloudflare で動作中" : "Groq で動作中"}</span>`;
+    box("ai").innerHTML = `<p style="margin:0 0 10px">${now}${st.configured ? `<br><span class="small muted">${esc(st.model.replace("@cf/openai/", ""))} · 確認 ${fmt(st.checked_at)}${st.error ? ` · 直近のエラー: <span style="color:var(--danger)">${esc(st.error)}</span>` : ""}</span>` : ""}</p>
+      <h3 class="small" style="margin:12px 0 6px">主: Cloudflare Workers AI ${st.cloudflare ? '<span style="color:var(--ok)">（設定済み）</span>' : ""}</h3>
+      <form class="row wrap" style="gap:8px" data-aicfg>
+        <input class="input grow" name="account" placeholder="アカウント ID（32 桁）" autocomplete="off" spellcheck="false" style="min-width:220px">
+        <input class="input grow" name="token" type="password" placeholder="API トークン（Workers AI の権限だけ）" autocomplete="new-password" style="min-width:220px">
+        <select class="input" name="model" style="width:auto"><option value="@cf/openai/gpt-oss-120b"${st.model !== "@cf/openai/gpt-oss-20b" ? " selected" : ""}>gpt-oss-120b（賢い）</option><option value="@cf/openai/gpt-oss-20b"${st.model === "@cf/openai/gpt-oss-20b" ? " selected" : ""}>gpt-oss-20b（軽い・回数が約 2 倍）</option></select>
+        <button class="btn primary">確認して保存</button>
+        ${st.cloudflare ? `<button type="button" class="btn danger" data-aiclear="cf">切断</button>` : ""}</form>
+      <div class="pat-steps small">
+        <a class="btn sm" href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener">${icon("share")} Cloudflare で API トークンを作る</a>
+        <ol>
+          <li>「Create Token」→ テンプレート「<b>Workers AI</b>」を選び、そのまま作成（権限は Workers AI だけ）</li>
+          <li>表示されたトークンをコピーして上の欄に貼る</li>
+          <li>アカウント ID は Cloudflare のダッシュボードの右側（または URL の dash.cloudflare.com/<b>この 32 桁</b>/…）</li>
+        </ol></div>
+      <h3 class="small" style="margin:14px 0 6px">予備: Groq（Cloudflare の枠が尽きたときだけ使い、枠が戻れば自動で Cloudflare に戻ります）${st.groq ? ' <span style="color:var(--ok)">（設定済み）</span>' : ""}</h3>
+      <form class="row wrap" style="gap:8px" data-groqcfg>
+        <input class="input grow" name="token" type="password" placeholder="gsk_…（Groq の API キー）" autocomplete="new-password" style="min-width:220px">
+        <button class="btn primary">確認して保存</button>
+        ${st.groq ? `<button type="button" class="btn danger" data-aiclear="groq">切断</button>` : ""}</form>
+      <div class="pat-steps small">
+        <a class="btn sm" href="https://console.groq.com/keys" target="_blank" rel="noopener">${icon("share")} Groq で API キーを作る</a>
+        <ol><li>「Create API Key」で作り、表示された <code>gsk_…</code> を上の欄に貼る</li>
+          <li>Groq の Settings →「Data Controls」で、データを保存しない設定（Zero Data Retention）をオンにしておく</li></ol></div>`;
+    const save = (sel, body, label) => {
+      $(sel, el).onsubmit = async e => {
+        e.preventDefault(); const f = e.target, b = $("button.primary", f); b.disabled = true; b.textContent = "AI に接続中…";
+        try { await fn("owl-ai", body(f)); toast(`${label}をつなぎました`); aiBox(); audit(); }
+        catch (er) { fail(er); b.disabled = false; b.textContent = "確認して保存"; }
+      };
+    };
+    save("[data-aicfg]", f => ({ action: "set_config", account_id: f.account.value, token: f.token.value, model: f.model.value }), "Cloudflare ");
+    save("[data-groqcfg]", f => ({ action: "set_groq", token: f.token.value }), "Groq ");
+    $$("[data-aiclear]", el).forEach(c => c.onclick = async () => {
+      const g = c.dataset.aiclear === "groq";
+      if (await confirmBox(`${g ? "予備の Groq" : "Cloudflare"} の接続を解除しますか？`, "解除", true)) { await fn("owl-ai", { action: g ? "clear_groq" : "clear_config" }); aiBox(); audit(); }
+    });
+  };
   const teamBox = async () => {
     box("team").innerHTML = `<form class="row" style="gap:8px;margin-bottom:14px" data-rename><input class="input grow" name="name" value="${esc(S.cfg.team)}"><button class="btn">名前を変更</button></form>
       <button class="btn primary" data-export>${icon("dl")} チームのデータを書き出す（JSON）</button>
@@ -877,7 +923,7 @@ async function renderAdmin(el) {
   const audit = async () => {
     const rows = must(await SB.from("audit_log").select("*").order("at", { ascending: false }).limit(100));
     const L = { "invite.create": "招待コードを発行", "invite.revoke": "招待コードを無効化", "member.register": "新規登録", "member.role": "権限を変更", "member.deactivate": "利用停止",
-      "member.reactivate": "利用再開", "member.reset_password": "仮パスワードを発行", "mail.configure": "共有 Gmail を設定", "mail.disconnect": "共有 Gmail を切断", "team.rename": "チーム名を変更", "data.export": "データを書き出し", "repo.configure": "リポジトリを接続", "repo.disconnect": "リポジトリを切断" };
+      "member.reactivate": "利用再開", "member.reset_password": "仮パスワードを発行", "mail.configure": "共有 Gmail を設定", "mail.disconnect": "共有 Gmail を切断", "team.rename": "チーム名を変更", "data.export": "データを書き出し", "repo.configure": "リポジトリを接続", "repo.disconnect": "リポジトリを切断", "ai.configure": "owl の AI を接続", "ai.disconnect": "owl の AI を切断" };
     box("audit").innerHTML = rows.length ? `<table class="tbl"><tbody>${rows.map(r => `<tr><td class="small" style="white-space:nowrap">${fmtTs(r.at)}</td><td>${esc(r.actor_id ? U(r.actor_id).name : "—")}</td>
       <td>${esc(L[r.action] || r.action)}</td><td class="small muted hide-sm">${esc(Object.entries(r.detail || {}).map(([k, v]) => `${k}: ${v}`).join(" / "))}</td></tr>`).join("")}</tbody></table>` : '<p class="small muted">まだ記録はありません</p>';
   };
@@ -903,7 +949,7 @@ async function renderAdmin(el) {
     const r = e.target.closest("[data-role]"); if (!r) return;
     try { await fn("admin", { action: "set_role", user_id: r.dataset.role, role: r.value }); toast("権限を変更しました"); audit(); } catch (er) { fail(er); members(); }
   };
-  await Promise.all([invites(), members(), mail(), repoBox(), teamBox(), audit()]);
+  await Promise.all([invites(), members(), mail(), repoBox(), aiBox(), teamBox(), audit()]);
 }
 
 async function exportData() {

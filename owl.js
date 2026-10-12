@@ -1,6 +1,6 @@
 /* owl — フクロウ（起動画面・どこからでも話しかけられる相棒・フクロウとのチャット）
  * フクロウの動きは 24 コマの首振りスプライト（img/owl_turn.webp）＋ CSS の浮遊・首かしげ・跳ねで作る。
- * チャットの中身（AI）は未定。返事は OWL_AI.reply を差し替えれば変わる（いまは仮の返事）。 */
+ * 返事は OWL_AI.reply（Edge Function owl-ai 経由で Cloudflare Workers AI の gpt-oss）。会話はタブの中だけに残し、サーバに保存しない。 */
 "use strict";
 
 const OWL_SPLASH_MIN = 2800;   // 起動画面を最低これだけ見せる（ms）。一瞬で消えて落ち着かないのを防ぐ
@@ -67,11 +67,12 @@ new MutationObserver(() => { if (!OWL_SPLASH.gone && !OWL_SPLASH.node.isConnecte
 
 /* ---------- フクロウとのチャット ---------- */
 const OWL_AI = {
-  /** 返事を作る。history: [{ who: "me" | "owl", text }]。AI の中身が決まったらここを差し替える */
+  /** 返事を作る。history: [{ who: "me" | "owl", text }]。中身は Edge Function owl-ai（Cloudflare Workers AI・OpenAI の gpt-oss） */
   async reply(history) {
-    await new Promise(r => setTimeout(r, 650 + Math.random() * 500));
-    const last = history[history.length - 1].text;
-    return `「${last.length > 40 ? last.slice(0, 40) + "…" : last}」だね。ホー、ちゃんと聞いたよ。\nまだ考える頭（AI）を準備しているところなんだ。決まったら、ここで相談に乗れるようになるよ。`;
+    const d = await fn("owl-ai", { action: "chat", messages: history.slice(-12) });
+    if (d.configured === false) return "ホー、まだ考える頭（AI）がつながっていないんだ。\n管理者が「管理」画面の「owl の AI」で設定すると、ここで相談に乗れるようになるよ。";
+    if (d.quota) return "今日はたくさん話して、ちょっと疲れちゃった。ホー……\n毎朝 9 時に元気が戻るから、また話しかけてね。";
+    return d.reply;
   },
 };
 const OWL_GREET = "ホー。owl だよ。\n困ったこと・確認したいことがあったら、ここで話しかけてね。";
@@ -105,7 +106,8 @@ function renderOwlChat(el) {
     list.insertAdjacentHTML("beforeend", `<div class="oc-msg owl typing"><span class="oc-av"></span><div class="oc-b"><i></i><i></i><i></i></div></div>`);
     scroll.scrollTop = scroll.scrollHeight;
     let ans;
-    try { ans = await OWL_AI.reply(L.slice()); } catch { ans = "ごめんね、いまは返事ができないみたい。少しあとでもう一度話しかけてね。"; }
+    try { ans = await OWL_AI.reply(L.slice()); } catch (e) { ans = `ごめんね、いまは返事ができないみたい。
+（${e.message}）`; }
     L.push({ who: "owl", text: ans }); owlSave(L); delete form.dataset.busy;
     if (el.isConnected) { draw(); ta.focus(); }
   };
