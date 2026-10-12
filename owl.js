@@ -3,7 +3,7 @@
  * チャットの中身（AI）は未定。返事は OWL_AI.reply を差し替えれば変わる（いまは仮の返事）。 */
 "use strict";
 
-const OWL_SPLASH_MIN = 1800;   // 起動画面を最低これだけ見せる（ms）。一瞬で消えて落ち着かないのを防ぐ
+const OWL_SPLASH_MIN = 2800;   // 起動画面を最低これだけ見せる（ms）。一瞬で消えて落ち着かないのを防ぐ
 const OWL_FRAMES = 24;
 const owlReduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
