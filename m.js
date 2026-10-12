@@ -14,6 +14,7 @@ const UI = {
     document.body.className = "";
     document.body.innerHTML = `<div class="m-app">
       <header class="m-head"><h1></h1>
+        <button class="icon-btn bell-btn" data-bell aria-label="通知">${icon("bell")}<span class="badge alert" hidden></span></button>
         <button class="icon-btn" data-search aria-label="検索">${icon("search")}</button>
         <button class="claude-pill" data-claude aria-label="Claude を開く">${CLAUDE_MARK}Claude</button></header>
       <main class="m-main" id="main"></main>
@@ -22,6 +23,7 @@ const UI = {
       const t = e.target.closest(".m-tab[data-tab]"); if (t) return this.go(t.dataset.tab);
       if (e.target.closest("[data-claude]")) return openClaude();
       if (e.target.closest("[data-search]")) return openSwitcher();
+      if (e.target.closest(".m-head [data-bell]")) return this.push("通知", el => renderNotifPanel(el, { mobile: true }));
     });
     window.addEventListener("popstate", () => { if (this.pushes.length) this.pop(true); });
     on("channels", () => { this.badges(); if (this.tab === "chat" && !this.pushes.length) this.drawChatList(); });
@@ -32,6 +34,7 @@ const UI = {
     });
     this.badges();
     this.gestures();
+    initNotifs();
     let last = "home"; try { last = sessionStorage.getItem("tsunagi_tab") || "home"; } catch { }
     this.go(last);
   },
@@ -80,6 +83,7 @@ const UI = {
 
   goto(kind) {
     if (kind === "calendar") { this.planView = "calendar"; return this.go("plan"); }
+    if (kind === "shifts") { this.planView = "shifts"; return this.go("plan"); }
     if (kind === "tasks") return this.push("タスク", el => renderTasks(el));
     this.go(kind);
   },
@@ -213,7 +217,7 @@ const UI = {
     navigator.vibrate && navigator.vibrate(10);
     const acts = [[icon("reply"), "返信", () => a.setReply(m)], [icon("task"), "タスクバスターに登録", () => taskFromText(m.body || "", `${chName(ch)} のメッセージ（${U(m.user_id).name}）`)],
       [CLAUDE_MARK, "Claude に相談", () => openClaude(`次のチャットメッセージについて相談させてください。\n\n「${m.body}」`)],
-      ...a.msgMenuActions(m).map(x => [icon(x[0] === "削除" ? "trash" : x[0] === "編集" ? "edit" : "share"), x[0], x[1], x[2]])];
+      ...a.msgMenuActions(m).map(x => [icon(x[0] === "削除" ? "trash" : x[0] === "編集" ? "edit" : x[0].startsWith("ピン") ? "pin" : "share"), x[0], x[1], x[2]])];
     const ov = this.sheet(`${U(m.user_id).name} のメッセージ`, acts, `<div class="emoji-row">${EMOJIS.slice(0, 7).map(e => `<button data-e="${e}">${e}</button>`).join("")}</div>`);
     $(".emoji-row", ov).onclick = e => { const b = e.target.closest("[data-e]"); if (b) { ov.close(); a.toggleReact(m.id, b.dataset.e); } };
   },

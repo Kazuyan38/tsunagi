@@ -1,4 +1,4 @@
-/* つなぎ — データ層（Supabase）。画面側は従来どおり api("/api/...") を呼び、ここで Supabase の問い合わせに読み替える。
+/* owl — データ層（Supabase）。画面側は従来どおり api("/api/...") を呼び、ここで Supabase の問い合わせに読み替える。
  * 権限はすべて DB の RLS が決める。ここで絞り込みを書いても、それは表示上の都合であって守りではない。 */
 "use strict";
 
@@ -47,6 +47,8 @@ async function authCall(action, body) {
 }
 
 async function signOut() {
+  // この端末の通知の購読を外してからログアウトする（次にこの端末を使う人へ前の人の通知が届かないように）
+  try { if (typeof pushOff === "function") await pushOff(); } catch { }
   try { await SB.auth.signOut(); } catch { }
   location.reload();
 }
@@ -283,6 +285,15 @@ async function postMessage(cid, { body = "", file_ids = [], reply_to = null, met
   return row;
 }
 
+/** ピン留め（新しい順）。本文はメッセージ表から引く（RLS でメンバー以外は読めない） */
+async function loadPins(cid) {
+  const pins = must(await SB.from("message_pins").select("message_id,pinned_by,pinned_at").eq("channel_id", cid).order("pinned_at", { ascending: false }).limit(50));
+  if (!pins.length) return [];
+  const msgs = must(await SB.from("messages").select("id,user_id,body,created_at,file_ids").in("id", pins.map(p => p.message_id)));
+  const by = Object.fromEntries(msgs.map(m => [m.id, m]));
+  return pins.filter(p => by[p.message_id]).map(p => ({ ...p, pinned_at: localISO(p.pinned_at), message: { ...by[p.message_id], created_at: localISO(by[p.message_id].created_at) } }));
+}
+
 const ROUTES = [
   ["GET", /^\/api\/me$/, async () => S.me],
   ["PUT", /^\/api\/me$/, async (_, b) => {
@@ -318,10 +329,10 @@ const ROUTES = [
     const before = +(qs.get("before") || 0), limit = 60;
     let q = SB.from("messages").select("*").eq("channel_id", cid).order("id", { ascending: false }).limit(limit);
     if (before) q = q.lt("id", before);
-    const [rows, members, channel] = await Promise.all([q.then(must), SB.from("channel_members").select("user_id,last_read_id").eq("channel_id", cid).then(must),
-      SB.from("channels").select("*").eq("id", cid).single().then(must)]);
+    const [rows, members, channel, pins] = await Promise.all([q.then(must), SB.from("channel_members").select("user_id,last_read_id").eq("channel_id", cid).then(must),
+      SB.from("channels").select("*").eq("id", cid).single().then(must), before ? Promise.resolve(null) : loadPins(+cid)]);
     const asc = rows.reverse();
-    return { channel, members, member_ids: members.map(m => m.user_id), messages: await serialize(asc, members),
+    return { channel, members, member_ids: members.map(m => m.user_id), messages: await serialize(asc, members), pins,
       my_last_read: (members.find(m => m.user_id === S.me.id) || {}).last_read_id || 0, has_more: rows.length >= limit };
   }],
   ["POST", /^\/api\/channels\/(\d+)\/messages$/, async ([cid], b) => {
@@ -331,6 +342,9 @@ const ROUTES = [
   }],
   ["PUT", /^\/api\/messages\/(\d+)$/, async ([mid], b) => must(await SB.from("messages").update({ body: String(b.body || "").trim(), edited_at: new Date().toISOString() }).eq("id", mid))],
   ["DELETE", /^\/api\/messages\/(\d+)$/, async ([mid]) => must(await SB.from("messages").update({ deleted: true, body: "", file_ids: [], meta: {} }).eq("id", mid))],
+  ["POST", /^\/api\/messages\/(\d+)\/pin$/, async ([mid], b) => b.on
+    ? must(await SB.from("message_pins").insert({ message_id: +mid }))
+    : must(await SB.from("message_pins").delete().eq("message_id", mid))],
   ["POST", /^\/api\/messages\/(\d+)\/reactions$/, async ([mid], b) => {
     const del = must(await SB.from("reactions").delete().eq("message_id", mid).eq("user_id", S.me.id).eq("emoji", b.emoji).select());
     if (!del.length) {
@@ -496,9 +510,11 @@ function connectWS() {
     .on("postgres_changes", { event: "*", schema: "public", table: "team_tasks" }, () => handleWS({ type: "team_tasks" }))
     .on("postgres_changes", { event: "INSERT", schema: "public", table: "team_task_logs" }, () => handleWS({ type: "team_tasks" }))
     .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => handleWS({ type: "users" }))
+    .on("postgres_changes", { event: "*", schema: "public", table: "message_pins" }, p => handleWS({ type: "pins", channel_id: (p.new && p.new.channel_id) || null }))
+    .on("postgres_changes", { event: "*", schema: "public", table: "notifications", filter: `user_id=eq.${S.me.id}` }, () => handleWS({ type: "notif" }))
     .subscribe(st => {
       emit("ws", st === "SUBSCRIBED");
-      if (st === "SUBSCRIBED" && rtDb._was) { loadChannels(); S.cur && emit("resync", S.cur); }
+      if (st === "SUBSCRIBED" && rtDb._was) { loadChannels(); S.cur && emit("resync", S.cur); emit("notif"); }
       if (st === "SUBSCRIBED") rtDb._was = true;
     });
   joinTeamRoom(true);

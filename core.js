@@ -1,4 +1,4 @@
-/* つなぎ — 共通コア（API・状態・リアルタイム・チャット・ファイルビューア）
+/* owl — 共通コア（API・状態・リアルタイム・チャット・ファイルビューア）
  * PC 版（pc.html）とスマホ版（mobile.html）が共有する。レイアウト固有の動きは window.UI に委ねる。
  */
 "use strict";
@@ -46,6 +46,8 @@ const P = {
   panel: '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/>',
   filter: '<path d="M4 6h16M7 12h10M10 18h4"/>',
   bell: '<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/>',
+  pin: '<path d="M9 4h6l-1 5 3 3v2H7v-2l3-3z"/><path d="M12 14v6"/>',
+  gear: '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
 };
 const icon = (name, cls = "ico") => `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[name] || ""}</svg>`;
 const CLAUDE_MARK = `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2.5c.5 3.9 1.3 5.6 2.4 6.7 1.1 1.1 2.8 1.9 6.6 2.3v1c-3.8.4-5.5 1.2-6.6 2.3-1.1 1.1-1.9 2.8-2.4 6.7h-1c-.4-3.9-1.2-5.6-2.3-6.7C7.6 13.7 5.9 12.9 2 12.5v-1c3.9-.4 5.6-1.2 6.7-2.3C9.8 8.1 10.6 6.4 11 2.5z"/></svg>`;
@@ -201,14 +203,14 @@ function emojiPicker(anchor, pick) {
 
 /* ---------- 起動・認証・リアルタイム ---------- */
 async function boot() {
-  S.cfg = { mail: { configured: false, address: "" }, max_upload_mb: TSUNAGI.maxUploadMB, team: "つなぎ" };
+  S.cfg = { mail: { configured: false, address: "" }, max_upload_mb: TSUNAGI.maxUploadMB, team: "owl" };
   const { data: { session } } = await SB.auth.getSession();
   if (!session) return renderLogin();
   const { data: me } = await SB.from("profiles").select("*").eq("id", session.user.id).maybeSingle();
   if (!me || !me.active) { await SB.auth.signOut(); return renderLogin("このアカウントは現在利用できません。管理者に確認してください"); }
   S.me = me;
   const [t, mail] = await Promise.all([SB.from("teams").select("name").maybeSingle(), SB.rpc("mail_status")]);
-  S.cfg.team = (t.data && t.data.name) || "つなぎ";
+  S.cfg.team = (t.data && t.data.name) || "owl";
   if (mail.data) S.cfg.mail = mail.data;
   await Promise.all([loadUsers(), loadChannels()]);
   connectWS();
@@ -231,7 +233,7 @@ async function loadChannels() {
 }
 function updateTitle() {
   const n = S.channels.reduce((a, c) => a + (c.muted ? 0 : c.unread), 0);
-  document.title = (n ? `(${n}) ` : "") + "つなぎ";
+  document.title = (n ? `(${n}) ` : "") + "owl";
 }
 
 let chReload = 0;
@@ -287,7 +289,7 @@ function renderLogin(notice) {
   document.body.innerHTML = `<main class="login"><div class="login-stage">
     <div class="owl-stage" aria-hidden="true"><div class="owl-shadow"></div><div class="owl" id="owl"></div></div>
     <div class="card login-card">
-      <h1>つなぎ</h1><p class="muted login-lead">チームの連絡・予定・シフト・共有メールを 1 か所に。</p>
+      <h1>owl</h1><p class="muted login-lead">チームの連絡・予定・シフト・共有メールを 1 か所に。</p>
       ${notice ? `<p class="login-notice">${esc(notice)}</p>` : ""}
       <div class="seg login-seg"><button type="button" data-m="login" class="on">ログイン</button><button type="button" data-m="register">新規登録</button></div>
       <form id="lf" autocomplete="on">
@@ -363,7 +365,7 @@ function msgHTML(m, prev, ch, memberIds) {
   if (m.reply) body = `<div class="msg-reply" data-jump="${m.reply.id}">↩ ${esc(U(m.reply.user_id).name)}: ${esc(m.reply.body || "（添付）")}</div>` + body;
   if (m.files.length) {
     body += `<div class="att-grid">${m.files.map(f => f.kind === "image"
-      ? `<img class="att-img" data-fsrc="${esc(f.path)}" alt="${esc(f.name)}" loading="lazy" data-file="${f.id}">`
+      ? `<img class="att-img" data-fsrc="${esc(f.path)}"${cachedSrc(f.path)} alt="${esc(f.name)}" loading="lazy" data-file="${f.id}">`
       : `<button class="file-card" data-file="${f.id}">${fileIcon(f)}<span class="file-meta"><div class="file-name">${esc(f.name)}</div><div class="file-sub">${KIND_NAME[f.kind]} · ${fmtSize(f.size)} · クリックでプレビュー</div></span></button>`).join("")}</div>`;
   }
   if (m.meta && m.meta.kind === "repo") {
@@ -380,8 +382,10 @@ function msgHTML(m, prev, ch, memberIds) {
     if (ch.kind === "dm" && others === 1) read = n ? `<span class="read-mark all">既読</span>` : "";
     else if (others) read = `<button class="read-mark${n >= others ? " all" : ""}" data-readers>${n >= others ? "全員既読" : `既読 ${n}/${others}`}</button>`;
   }
-  const foot = (reacts || !m.deleted ? reacts + (m.deleted ? "" : `<button class="react react-add" data-addreact aria-label="リアクション">${icon("smile")}</button>`) : "") + read;
-  return `<div class="msg${cont ? " cont" : ""}${mention ? " mention" : ""}" data-id="${m.id}">
+  const pinned = !m.deleted && S.cache[ch.id] && S.cache[ch.id].pinSet && S.cache[ch.id].pinSet.has(m.id);
+  const foot = (pinned ? `<span class="pin-mark">${icon("pin")}ピン留め</span>` : "") +
+    (reacts || !m.deleted ? reacts + (m.deleted ? "" : `<button class="react react-add" data-addreact aria-label="リアクション">${icon("smile")}</button>`) : "") + read;
+  return `<div class="msg${cont ? " cont" : ""}${mention ? " mention" : ""}${pinned ? " pinned" : ""}" data-id="${m.id}" data-rd="${m.read_by.length}">
     ${avatar(u, 40)}<div class="msg-gutter">${fmtTime(m.created_at)}</div>
     <div class="msg-main"><div class="msg-head"><span class="msg-name" data-user="${u.id}">${esc(u.name)}</span><span class="msg-time">${fmtTime(m.created_at)}</span></div>
     ${body}<div class="msg-foot">${foot}</div></div>
@@ -392,6 +396,18 @@ function msgHTML(m, prev, ch, memberIds) {
       <button data-claude title="Claude に相談">${CLAUDE_MARK}</button>
       <button data-more title="その他">${icon("more")}</button></div>`}
   </div>`;
+}
+
+/** 署名 URL が手元にあれば最初から src を入れる（描き直しで画像の高さが一瞬 0 になり、位置がずれるのを防ぐ）。 */
+function cachedSrc(path) {
+  const u = typeof _urls !== "undefined" && _urls.get(path);
+  return u && u.exp > Date.now() ? ` src="${esc(u.url)}" data-ready="1"` : "";
+}
+/** 描き直しの前後で、読み込み済みの画像要素を使い回す（読み込み直しで高さが揺れないように）。 */
+function keepImgs(root) { const m = new Map(); for (const i of root.querySelectorAll("img[data-fsrc]")) if (i.complete && i.naturalHeight) m.set(i.dataset.fsrc, i); return m; }
+function reuseImgs(root, kept) {
+  if (!kept.size) return;
+  for (const i of root.querySelectorAll("img[data-fsrc]")) { const old = kept.get(i.dataset.fsrc); if (old && old !== i) { i.replaceWith(old); kept.delete(i.dataset.fsrc); } }
 }
 
 function renderMsgList(listEl, cid, { newSepAfter } = {}) {
@@ -413,7 +429,8 @@ async function renderChat(el, cid) {
   S.cur = cid; S.replyTo = null;
   el.innerHTML = `<section class="chat">
     <header class="chat-head"></header>
-    <div class="chat-scroll"><div class="msgs" aria-live="polite"></div></div>
+    <div class="pin-bar" hidden></div>
+    <div class="chat-scroll"><div class="msgs" aria-live="polite"></div><div class="new-dock"><button class="new-msgs" hidden></button></div></div>
     <div class="typing"></div>
     <div class="composer"><div class="composer-box">
       <div class="reply-bar" hidden></div><div class="pending"></div>
@@ -433,10 +450,12 @@ async function renderChat(el, cid) {
   try { data = await api(`/api/channels/${cid}/messages`); } catch (e) { list.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
   if (S.cur !== cid) return;
   S.cache[cid] = data;
+  data.pins = data.pins || []; data.pinSet = new Set(data.pins.map(p => p.message_id));
   const ch = S.channels.find(x => x.id === cid) || data.channel;
   const drawHead = () => UI.chatHeader(head, ch, data);
   drawHead();
-  renderMsgList(list, cid, { newSepAfter: data.my_last_read });
+  const sepAfter = data.my_last_read;   // 「ここから未読」は開いている間ずっと同じ位置に置く（描き直しで高さが変わらないように）
+  renderMsgList(list, cid, { newSepAfter: sepAfter });
   const sep = $(".new-sep", list);
   requestAnimationFrame(() => { if (sep) sep.scrollIntoView({ block: "center" }); else scroll.scrollTop = scroll.scrollHeight; });
   const last = data.messages[data.messages.length - 1];
@@ -444,22 +463,117 @@ async function renderChat(el, cid) {
   ta.placeholder = ch.kind === "channel" ? `#${ch.name} へメッセージ` : `${chName(ch)} へメッセージ`;
   if (!UI.isMobile) ta.focus();
 
+  // ---- スクロール位置を守る
+  // 以前は操作のたびに一覧全体を描き直し、未読の区切りが消える・画像が読み込み直しで高さ 0 になる、で位置が上へ飛んでいた。
+  // 描き直しの前に「画面の一番上に見えているメッセージ」とそのずれを覚え、描き直した後に同じ位置へ戻す。
+  // 最下部付近にいたときだけ下へ追従する。画像が後から読み込まれて高さが変わったときも同じ基準で戻す
   const nearBottom = () => scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 140;
-  const redraw = (keep) => {
-    const atBottom = nearBottom(), prevH = scroll.scrollHeight, prevTop = scroll.scrollTop;
-    renderMsgList(list, cid);
-    if (keep === "top") scroll.scrollTop = scroll.scrollHeight - prevH + prevTop;
-    else if (atBottom) scroll.scrollTop = scroll.scrollHeight;
+  const toBottom = () => { scroll.scrollTop = scroll.scrollHeight; };
+  const anchor = () => {
+    const top = scroll.getBoundingClientRect().top;
+    for (const n of list.querySelectorAll(".msg")) { const r = n.getBoundingClientRect(); if (r.bottom > top + 1) return { id: n.dataset.id, off: r.top - top }; }
+    return null;
   };
+  const restore = a => {
+    if (!a) return;
+    const n = list.querySelector(`.msg[data-id="${a.id}"]`); if (!n) return;
+    scroll.scrollTop += (n.getBoundingClientRect().top - scroll.getBoundingClientRect().top) - a.off;
+  };
+  let hold = null;   // 直近の描き直しの基準（数秒だけ、画像の読み込みによる揺れを打ち消す。利用者が動かしたら手放す）
+  const keep = (a, bottom) => { hold = { a, bottom, until: Date.now() + 4000 }; };
+  list.addEventListener("load", () => { if (!hold || Date.now() > hold.until) return; hold.bottom ? toBottom() : restore(hold.a); }, true);
+  ["wheel", "touchstart", "keydown"].forEach(n => scroll.addEventListener(n, () => { hold = null; }, { passive: true }));
+  const redraw = (mode) => {
+    const atBottom = mode === "bottom" || (mode !== "top" && nearBottom()), a = anchor(), imgs = keepImgs(list);
+    renderMsgList(list, cid, { newSepAfter: sepAfter });
+    reuseImgs(list, imgs);
+    if (atBottom) toBottom(); else restore(a);
+    keep(a, atBottom);
+  };
+  /** 1 件だけ差し替える（リアクション・編集・削除・既読・ピン）。一覧全体は描き直さない */
+  const patch = m => {
+    const node = list.querySelector(`.msg[data-id="${m.id}"]`); if (!node) return;
+    const msgs = S.cache[cid].messages, i = msgs.findIndex(x => x.id === m.id);
+    let prev = i > 0 ? msgs[i - 1] : null;
+    if (prev && prev.created_at.slice(0, 10) !== m.created_at.slice(0, 10)) prev = null;
+    if (node.previousElementSibling && !node.previousElementSibling.classList.contains("msg")) prev = null;   // 日付・未読の区切りの直後
+    const atBottom = nearBottom(), a = anchor(), imgs = keepImgs(node);
+    const fresh = h(msgHTML(m, prev, S.cache[cid].channel, S.cache[cid].member_ids));
+    reuseImgs(fresh, imgs);
+    node.replaceWith(fresh);
+    hydrateFiles(fresh);
+    if (atBottom) toBottom(); else restore(a);
+    keep(a, atBottom);
+  };
+  // ---- 新着: 下の方にいるときだけ追いかける。過去を読んでいる間は動かさず「新着 n 件」を出す
+  const newBtn = $(".new-msgs", el); let newCount = 0;
+  const clearNew = () => { newCount = 0; newBtn.hidden = true; };
+  newBtn.onclick = () => { clearNew(); hold = null; scroll.scrollTo({ top: scroll.scrollHeight, behavior: "smooth" }); };
+  scroll.addEventListener("scroll", () => { if (newCount && nearBottom()) clearNew(); }, { passive: true });
+
+  // ---- ピン留め
+  const pinBar = $(".pin-bar", el);
+  const drawPins = () => {
+    const pins = S.cache[cid].pins || [];
+    pinBar.hidden = !pins.length;   // 0 件なら何も出さない
+    pinBar.innerHTML = pins.length ? `<button class="pin-open">${icon("pin")}<span class="pin-n">ピン留め ${pins.length} 件</span><span class="pin-last ellipsis">${esc(U(pins[0].message.user_id).name)}: ${esc((pins[0].message.body || "（添付）").replace(/\s+/g, " "))}</span>${icon("chev")}</button>` : "";
+  };
+  drawPins();
+  pinBar.onclick = e => { const b = e.target.closest(".pin-open"); if (b) showPins(b); };
+  function showPins(anchorEl) {
+    const pins = S.cache[cid].pins || [];
+    const html = `<div class="pin-list">${pins.map(p => `<button class="pin-item" data-pj="${p.message_id}">
+        <span class="pin-who">${avatar(U(p.message.user_id), 22, false)}<b>${esc(U(p.message.user_id).name)}</b><span class="small muted">${fmtDay(p.message.created_at)} ${fmtTime(p.message.created_at)}</span></span>
+        <span class="pin-text">${esc((p.message.body || "（添付）").slice(0, 140))}</span>
+        <span class="small muted">${esc(U(p.pinned_by).name)} が ${fmtRel(p.pinned_at)} にピン留め</span></button>`).join("")}</div>`;
+    const pick = e => { const b = e.target.closest("[data-pj]"); if (!b) return false; jumpTo(+b.dataset.pj); return true; };
+    if (UI.isMobile) { const ov = modal(`ピン留め（${pins.length}）`, html); $(".modal-body", ov).onclick = e => { if (pick(e)) ov.close(); }; }
+    else popover(anchorEl, html, { onMount: p => p.onclick = e => { if (pick(e)) closePop(); } });
+  }
+  async function jumpTo(mid) {
+    // まだ読み込んでいない古いメッセージなら、見つかるまでさかのぼる
+    for (let i = 0; i < 20 && !list.querySelector(`.msg[data-id="${mid}"]`) && S.cache[cid].has_more; i++) await loadOlder();
+    const n = list.querySelector(`.msg[data-id="${mid}"]`);
+    if (!n) return toast("メッセージが見つかりませんでした", true);
+    hold = null;
+    n.scrollIntoView({ block: "center", behavior: "smooth" }); n.classList.add("flash"); setTimeout(() => n.classList.remove("flash"), 1700);
+  }
+  async function reloadPins() {
+    const before = S.cache[cid].pinSet || new Set();
+    const pins = await loadPins(cid).catch(() => null); if (!pins || !alive()) return;
+    S.cache[cid].pins = pins; S.cache[cid].pinSet = new Set(pins.map(p => p.message_id));
+    drawPins();
+    for (const id of new Set([...before, ...S.cache[cid].pinSet])) {
+      if (before.has(id) !== S.cache[cid].pinSet.has(id)) { const m = S.cache[cid].messages.find(x => x.id === id); if (m) patch(m); }
+    }
+  }
+  async function togglePin(m) {
+    const on = !(S.cache[cid].pinSet && S.cache[cid].pinSet.has(m.id));
+    try { await api(`/api/messages/${m.id}/pin`, { method: "POST", body: { on } }); await reloadPins(); toast(on ? "ピン留めしました" : "ピン留めを外しました"); }
+    catch (e) { fail(e); }
+  }
 
   // ---- リアルタイム反映（この画面が生きている間だけ）
   const alive = () => document.body.contains(list) && S.cur === cid;
   const handlers = {
-    message: m => { if (!alive()) return; if (m.channel_id === cid) { const mine = m.user_id === S.me.id; redraw(); if (mine) scroll.scrollTop = scroll.scrollHeight; } },
-    message_update: m => { if (alive() && m.channel_id === cid) { const node = $(`.msg[data-id="${m.id}"]`, list); node ? redraw() : 0; } },
-    read: ev => { if (alive() && ev.channel_id === cid) redraw(); },
+    message: m => {
+      if (!alive() || m.channel_id !== cid) return;
+      const mine = m.user_id === S.me.id, follow = mine || nearBottom();
+      redraw(mine ? "bottom" : undefined);
+      if (!follow) { newCount++; newBtn.textContent = `新着 ${newCount} 件 ↓`; newBtn.hidden = false; }
+    },
+    message_update: m => { if (alive() && m.channel_id === cid) patch(m); },
+    read: ev => {
+      if (!alive() || ev.channel_id !== cid) return;
+      for (const m of S.cache[cid].messages) {
+        if (m.user_id !== S.me.id) continue;
+        const n = list.querySelector(`.msg[data-id="${m.id}"]`);
+        if (n && n.dataset.rd !== String(m.read_by.length)) patch(m);
+      }
+    },
+    pins: ev => { if (alive() && (!ev.channel_id || ev.channel_id === cid)) reloadPins(); },
     presence: () => { if (alive()) drawHead(); },
-    resync: id => { if (alive() && id === cid) api(`/api/channels/${cid}/messages`).then(d => { S.cache[cid] = d; redraw(); }); },
+    resync: id => { if (alive() && id === cid) api(`/api/channels/${cid}/messages`).then(d => { d.pinSet = new Set((d.pins || []).map(p => p.message_id)); S.cache[cid] = d; drawPins(); redraw(); }); },
     typing: () => {
       if (!alive()) return;
       const now = Date.now();
@@ -479,7 +593,7 @@ async function renderChat(el, cid) {
       const first = S.cache[cid].messages[0];
       const d = await api(`/api/channels/${cid}/messages?before=${first ? first.id : 0}`);
       S.cache[cid].messages = [...d.messages, ...S.cache[cid].messages]; S.cache[cid].has_more = d.has_more; data.has_more = d.has_more;
-      redraw("top");
+      redraw("top");   // 上に足しても、いま見ているメッセージの位置は動かさない
     } finally { delete scroll.dataset.loading; }
   }
 
@@ -523,7 +637,9 @@ async function renderChat(el, cid) {
     $("button", rb).onclick = () => { S.replyTo = null; rb.hidden = true; }; ta.focus();
   }
   function msgMenuActions(m) {
+    const pinned = S.cache[cid].pinSet && S.cache[cid].pinSet.has(m.id);
     const acts = [
+      [pinned ? "ピン留めを外す" : "ピン留めする", () => togglePin(m)],
       ["コピー", () => navigator.clipboard.writeText(m.body || "").then(() => toast("コピーしました"))],
       ["別のチャンネルへ転送", () => pickChannel("転送先", async to => { await api(`/api/channels/${to}/messages`, { method: "POST", body: { body: `> ${U(m.user_id).name}: ${m.body}`, file_ids: m.files.map(f => f.id) } }); toast("転送しました"); })],
     ];
@@ -585,7 +701,7 @@ async function renderChat(el, cid) {
     if (!canSend() || pending.some(p => !p.done)) return;
     const body = ta.value, file_ids = pending.filter(p => p.file).map(p => p.file.id), reply_to = S.replyTo;
     ta.value = ""; pending.length = 0; pend.innerHTML = ""; S.replyTo = null; $(".reply-bar", el).hidden = true; sync();
-    try { const m = await api(`/api/channels/${cid}/messages`, { method: "POST", body: { body, file_ids, reply_to } }); handleWS({ type: "message", message: m }); }
+    try { const m = await api(`/api/channels/${cid}/messages`, { method: "POST", body: { body, file_ids, reply_to } }); clearNew(); handleWS({ type: "message", message: m }); }
     catch (e) { ta.value = body; sync(); fail(e); }
   }
   sendBtn.onclick = send;

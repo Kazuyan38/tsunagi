@@ -1,4 +1,6 @@
-# つなぎ
+# owl
+
+表示名は owl（旧称: つなぎ）。リポジトリ名と公開 URL は tsunagi のままです。
 
 - 公開ページ: https://kazuyan38.github.io/tsunagi/
 - リポジトリ: https://github.com/Kazuyan38/tsunagi

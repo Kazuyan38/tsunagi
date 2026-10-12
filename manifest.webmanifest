@@ -1,6 +1,6 @@
 {
-  "name": "つなぎ",
-  "short_name": "つなぎ",
+  "name": "owl",
+  "short_name": "owl",
   "start_url": "m.html",
   "scope": "./",
   "display": "standalone",

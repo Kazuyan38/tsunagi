@@ -1,4 +1,4 @@
-/* つなぎ — 各画面（ホーム・メール・予定・シフト・連絡先・ファイル・タスク・検索）。PC / スマホ共通。 */
+/* owl — 各画面（ホーム・メール・予定・シフト・連絡先・ファイル・タスク・検索）。PC / スマホ共通。 */
 "use strict";
 
 /** 画面単位の購読。画面を切り替えたら前の画面の購読を外す。 */
@@ -731,7 +731,7 @@ async function renderMyTasks(el, right) {
   };
   $(".task-add", el).onsubmit = async e => {
     e.preventDefault(); const f = e.target;
-    try { const r = await api("/api/tasks", { method: "POST", body: { title: f.title.value, due: f.due.value, source: "つなぎ" } }); f.reset(); toast(r.mode === "taskbuster" ? "タスクバスターに登録しました" : "登録しました"); draw(); } catch (er) { fail(er); }
+    try { const r = await api("/api/tasks", { method: "POST", body: { title: f.title.value, due: f.due.value, source: "owl" } }); f.reset(); toast(r.mode === "taskbuster" ? "タスクバスターに登録しました" : "登録しました"); draw(); } catch (er) { fail(er); }
   };
   el.onclick = e => { const b = e.target.closest("[data-tdone]"); if (b) { b.classList.add("on"); doneTask(b.dataset.tdone).then(draw); } };
   swipeRows(el, ".task-body .li", row => {
@@ -847,8 +847,8 @@ async function renderAdmin(el) {
       const repo = $("[data-repocfg] [name=repo]", el).value.trim();
       const owner = repo.split("/")[0] || "", name = repo.split("/")[1] || "";
       const u = new URL("https://github.com/settings/personal-access-tokens/new");
-      u.searchParams.set("name", `tsunagi-read-${name}`.slice(0, 40));
-      u.searchParams.set("description", `つなぎ（チーム連絡ツール）から ${repo} を読むための読み取り専用トークン`);
+      u.searchParams.set("name", `owl-read-${name}`.slice(0, 40));
+      u.searchParams.set("description", `owl（チーム連絡ツール）から ${repo} を読むための読み取り専用トークン`);
       if (owner) u.searchParams.set("target_name", owner);
       u.searchParams.set("expires_in", "366");
       u.searchParams.set("contents", "read");
@@ -923,7 +923,7 @@ async function exportData() {
     for (const [t, o] of Object.entries(tables)) data[t] = await all(t, o);
     await SB.rpc("log_export", { p_rows: Object.values(data).filter(Array.isArray).reduce((a, x) => a + x.length, 0) });
     const blob = new Blob([JSON.stringify(data, null, 1)], { type: "application/json" });
-    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `tsunagi-export-${todayStr()}.json`; a.click();
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `owl-export-${todayStr()}.json`; a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
     toast("書き出しました");
   } catch (e) { fail(e); }

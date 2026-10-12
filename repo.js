@@ -1,4 +1,4 @@
-/* つなぎ — GitHub リポジトリ画面（閲覧・キーワード検索）。
+/* owl — GitHub リポジトリ画面（閲覧・キーワード検索）。
  * 中身の取得は Edge Function `repo` が行い、トークンはブラウザに来ない。
  * 検索は Supabase 上の索引（repo_docs）を RLS 付きで引く。
  */

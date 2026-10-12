@@ -1,6 +1,6 @@
 "use strict";
 const NAV = [["home", "ホーム", "home"], ["chat", "チャット", "chat"], ["mail", "メール", "mail"], ["calendar", "予定", "cal"], ["shifts", "シフト", "shift"], ["people", "連絡先", "people"], ["files", "ファイル", "file"], ["tasks", "タスク", "task"], ["repo", "リポジトリ", "book"]];
-const LOGO = `<img class="logo brand-owl" src="img/favicon-64.png" alt="つなぎ" width="42" height="42">`;
+const LOGO = `<img class="logo brand-owl" src="img/favicon-64.png" alt="owl" width="42" height="42">`;
 
 const UI = {
   isMobile: false,
@@ -17,6 +17,7 @@ const UI = {
         <button class="rail-toggle" data-sidetoggle title="チャンネル一覧を開く／閉じる（Ctrl+\）" aria-label="チャンネル一覧を開閉">${icon("panel")}</button>
         ${[...NAV, ...(S.me.role === "admin" ? [["admin", "管理", "user"]] : [])].map(([k, l, i]) => `<button class="rail-btn" data-go="${k}" title="${l}">${icon(i)}<span>${l}</span><span class="badge" hidden></span></button>`).join("")}
         <span class="sp"></span>
+        <button class="rail-btn" data-bell title="通知" aria-label="通知">${icon("bell")}<span>通知</span><span class="badge alert" hidden></span></button>
         <button class="claude-btn" data-claude title="Claude を開く（新しいタブ）">${CLAUDE_MARK}</button><span class="claude-cap">Claude</span>
         <button class="me-btn" data-me title="プロフィール"></button>
       </nav>
@@ -30,6 +31,7 @@ const UI = {
       <main class="main" id="main"></main></div>`;
     document.addEventListener("click", e => {
       const g = e.target.closest("[data-go]"); if (g) { this.go(g.dataset.go); return; }
+      const bell = e.target.closest("[data-bell]"); if (bell) { this.openNotifs(bell); return; }
       if (e.target.closest("[data-claude]")) openClaude();
       if (e.target.closest("[data-me]")) showProfile(S.me.id);
       if (e.target.closest("[data-search]")) openSwitcher();
@@ -56,12 +58,22 @@ const UI = {
     on("ws", ok => { const c = $(".conn"); c.hidden = ok; c.classList.toggle("off", !ok); });
     on("mail", () => this.mailBadge()); on("mail_read", () => this.mailBadge());
     window.addEventListener("focus", () => { if (S.cur && this.section === "chat") { const c = S.cache[S.cur]; const m = c && c.messages[c.messages.length - 1]; if (m) markRead(S.cur, m.id); } });
-    this.drawMe(); this.drawSide(); this.mailBadge();
+    this.drawMe(); this.drawSide(); this.mailBadge(); initNotifs();
     let last = {}; try { last = JSON.parse(localStorage.getItem("tsunagi_pc") || "{}"); } catch { }
     if (last.section === "chat" && S.channels.some(c => c.id === last.cid)) this.openChannel(last.cid); else this.go(last.section && last.section !== "chat" ? last.section : "home");
   },
 
   drawMe() { const b = $("[data-me]"); if (b) b.innerHTML = avatar(S.me, 38); },
+
+  /** 通知: レールのベルの右側に一覧を開く（もう一度押すと閉じる） */
+  openNotifs(bell) {
+    if (_pop && _pop.classList.contains("nt-pop")) return closePop();
+    const p = popover(bell, `<div class="nt-wrap"></div>`);
+    p.classList.add("nt-pop");
+    const r = bell.getBoundingClientRect();
+    p.style.left = (r.right + 10) + "px"; p.style.top = "auto"; p.style.bottom = Math.max(8, innerHeight - r.bottom - 8) + "px";
+    renderNotifPanel($(".nt-wrap", p));
+  },
 
   async mailBadge() {
     try {
