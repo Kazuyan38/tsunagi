@@ -19,7 +19,7 @@ const UI = {
       <main class="m-main" id="main"></main>
       <nav class="m-tabs">${TABS.map(([k, l, i]) => `<button class="m-tab" data-tab="${k}">${icon(i)}<span>${l}</span><span class="badge" hidden></span></button>`).join("")}</nav></div>`;
     document.addEventListener("click", e => {
-      const t = e.target.closest("[data-tab]"); if (t) return this.go(t.dataset.tab);
+      const t = e.target.closest(".m-tab[data-tab]"); if (t) return this.go(t.dataset.tab);
       if (e.target.closest("[data-claude]")) return openClaude();
       if (e.target.closest("[data-search]")) return openSwitcher();
     });
@@ -31,14 +31,55 @@ const UI = {
       if (document.visibilityState === "visible" && S.cur && this.chatVisible()) { const c = S.cache[S.cur]; const m = c && c.messages[c.messages.length - 1]; if (m) markRead(S.cur, m.id); }
     });
     this.badges();
+    this.gestures();
     let last = "home"; try { last = sessionStorage.getItem("tsunagi_tab") || "home"; } catch { }
     this.go(last);
+  },
+
+  /** スマホの払う操作: 下部タブの左右移動・引っ張って再読み込み・チャット一覧の行スワイプ。 */
+  gestures() {
+    const main = $("#main"), order = TABS.map(t => t[0]);
+    main.dataset.swipeNav = 1;
+    swipeNav(main, () => { const i = order.indexOf(this.tab); if (i > 0) this.go(order[i - 1]); },
+      () => { const i = order.indexOf(this.tab); if (i < order.length - 1) this.go(order[i + 1]); });
+    swipeRows(main, ".chat-list .li[data-ch]", row => {
+      const ch = S.channels.find(c => c.id === +row.dataset.ch); if (!ch) return {};
+      return {
+        left: ch.unread ? { label: "既読にする", icon: "check", tone: "ok", run: () => readChannel(ch.id) } : null,
+        right: { label: ch.starred ? "スターを外す" : "スター", icon: "star", tone: "warn", run: async () => {
+          await api(`/api/channels/${ch.id}/star`, { method: "POST" }); await loadChannels(); toast(ch.starred ? "スターを外しました" : "スターを付けました"); } },
+      };
+    });
+    // 一番上で下に引くと再読み込み
+    const ptr = h(`<div class="ptr">${icon("dl")}<span>離すと更新</span></div>`);
+    let p = null;
+    main.addEventListener("touchstart", e => { if (main.scrollTop <= 0 && !e.target.closest("input,textarea,.swiping")) p = { y: e.touches[0].clientY, dy: 0 }; }, { passive: true });
+    main.addEventListener("touchmove", e => {
+      if (!p) return;
+      p.dy = e.touches[0].clientY - p.y;
+      if (p.dy <= 0 || main.scrollTop > 0) { p = null; ptr.style.height = "0"; return; }
+      if (!ptr.isConnected) main.prepend(ptr);
+      ptr.style.transition = "none"; ptr.style.height = Math.min(70, p.dy * 0.45) + "px";
+      ptr.classList.toggle("ready", p.dy * 0.45 >= 56);
+    }, { passive: true });
+    main.addEventListener("touchend", async () => {
+      if (!p) return;
+      const go = p.dy * 0.45 >= 56; p = null;
+      ptr.style.transition = ""; ptr.style.height = "0";
+      if (go) { buzz(); await Promise.all([loadChannels(), loadUsers()]).catch(() => { }); this.go(this.tab); this.badges(); }
+    });
   },
 
   async badges() {
     const n = S.channels.reduce((a, c) => a + (c.muted ? 0 : c.unread), 0);
     const b = $('[data-tab="chat"] .badge'); if (b) { b.hidden = !n; b.textContent = n; }
     try { const d = await api("/api/mail?box=inbox"); const m = d.items.filter(x => !x.read_by_me).length; const mb = $('[data-tab="mail"] .badge'); mb.hidden = !m; mb.textContent = m; } catch { }
+  },
+
+  goto(kind) {
+    if (kind === "calendar") { this.planView = "calendar"; return this.go("plan"); }
+    if (kind === "tasks") return this.push("タスク", el => renderTasks(el));
+    this.go(kind);
   },
 
   go(tab) {

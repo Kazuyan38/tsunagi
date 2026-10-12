@@ -74,6 +74,13 @@
   .page-head .input[type=search] { max-width: none !important; flex: 1 1 100%; order: 10; }
   .home { padding: 0 16px 32px; }
   .home-hero { grid-template-columns: 1fr; gap: 12px; margin-bottom: 14px; }
+  .home-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+  .stat { min-height: 84px; padding: 10px 10px 9px; border-radius: 14px; }
+  .stat-n { font-size: 24px; }
+  .stat-l { font-size: 11.5px; }
+  .stat-l .l-long { display: none; } .stat-l .l-short { display: inline; }
+  .stat-ico { top: 8px; right: 8px; }
+  .stat-ico .ico { width: 16px; height: 16px; }
   .home-greet { padding: 0; }
   .home-greet h1 { font-size: 21px; }
   .home-grid { grid-template-columns: 1fr; gap: 12px; }
@@ -117,8 +124,8 @@
   .read-mark { min-height: 32px; display: inline-grid; place-items: center; padding: 0 8px; }
   .react { height: 32px; padding: 0 10px; }
   .chip { height: 32px; }
-  .task-check { width: 30px; height: 30px; border-radius: 9px; }
-  .tt-row { grid-template-columns: 32px minmax(0, 1fr) auto; }
+  .task-check { width: 32px; height: 32px; border-radius: 10px; }
+  .tt-row { grid-template-columns: 34px minmax(0, 1fr) auto; }
   .login-card input[type=checkbox] { width: 22px; height: 22px; }
   .btn.sm { height: 36px; }
   .btn.icon { width: 40px; }
@@ -128,6 +135,7 @@
 <script src="vendor/supabase-2.45.4.js"></script>
 <script src="config.js"></script>
 <script src="core.js"></script>
+<script src="gestures.js"></script>
 <script src="data.js"></script>
 <script src="screens.js"></script>
 <script src="m.js"></script>

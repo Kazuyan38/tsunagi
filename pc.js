@@ -83,6 +83,8 @@ const UI = {
 
   save() { try { localStorage.setItem("tsunagi_pc", JSON.stringify({ section: this.section, cid: S.cur })); } catch { } },
 
+  goto(kind) { this.go(kind); },
+
   go(section, arg) {
     if (section === "chat") {
       const target = S.cur || (S.channels.find(c => c.unread) || S.channels.find(c => c.kind === "channel") || {}).id;

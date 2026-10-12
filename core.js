@@ -49,7 +49,7 @@ const CLAUDE_MARK = `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><pa
 
 /* ---------- 状態 ---------- */
 const S = {
-  me: null, cfg: null, users: {}, online: new Set(), channels: [], joinable: [],
+  me: null, cfg: null, users: {}, avatarUrls: {}, online: new Set(), channels: [], joinable: [],
   cur: null, cache: {}, replyTo: null, typing: {},
 };
 const bus = new EventTarget();
@@ -91,7 +91,8 @@ const initial = name => (name || "?").trim().slice(0, 1);
 function avatar(u, size = 36, showOnline = true) {
   if (!u) return "";
   const on = showOnline && S.online.has(u.id) ? " online" : "";
-  return `<span class="avatar${on}" style="--s:${size}px;--c:${esc(u.color)}" title="${esc(u.name)}">${esc(initial(u.name))}</span>`;
+  const img = S.avatarUrls && S.avatarUrls[u.id];
+  return `<span class="avatar${on}${img ? " has-img" : ""}" style="--s:${size}px;--c:${esc(u.color)}" title="${esc(u.name)}">${img ? `<img src="${esc(img)}" alt="" loading="lazy" draggable="false">` : esc(initial(u.name))}</span>`;
 }
 
 function chName(ch) {
@@ -151,6 +152,7 @@ function modal(title, body, { foot = "", wide = false, onClose, cls = "" } = {})
   document.addEventListener("keydown", key);
   document.body.appendChild(ov);
   ov.close = close;
+  if (window.UI && UI.isMobile) dragToClose(ov);
   setTimeout(() => { const f = $("[autofocus]", ov); f && f.focus(); }, 30);
   return ov;
 }
@@ -209,6 +211,7 @@ async function loadUsers() {
   const list = await api("/api/users");
   S.users = Object.fromEntries(list.map(u => [u.id, u]));
   if (S.me) S.me = { ...S.me, ...S.users[S.me.id] };
+  await loadAvatars(list);
   emit("users");
 }
 async function loadChannels() {
@@ -473,7 +476,7 @@ async function renderChat(el, cid) {
     const t = e.target, msgEl = t.closest(".msg"), mid = msgEl ? +msgEl.dataset.id : 0;
     const m = mid && S.cache[cid].messages.find(x => x.id === mid);
     if (t.closest("[data-older]")) return loadOlder();
-    if (t.closest("[data-file]")) { const f = m.files.find(x => x.id === +t.closest("[data-file]").dataset.file); return openViewer(f); }
+    if (t.closest("[data-file]")) { const f = m.files.find(x => x.id === +t.closest("[data-file]").dataset.file); return openViewer(f, m.files); }
     if (t.closest("[data-mail]")) return UI.openMail(+t.closest("[data-mail]").dataset.mail);
     if (t.closest("[data-user]")) return showProfile(t.closest("[data-user]").dataset.user);
     if (t.closest("[data-jump]")) { const n = $(`.msg[data-id="${t.closest("[data-jump]").dataset.jump}"]`, list); if (n) { n.scrollIntoView({ block: "center", behavior: "smooth" }); n.classList.add("flash"); setTimeout(() => n.classList.remove("flash"), 1700); } return; }
@@ -493,6 +496,12 @@ async function renderChat(el, cid) {
     pressT = setTimeout(() => { const m = S.cache[cid].messages.find(x => x.id === +msgEl.dataset.id); if (m && !m.deleted) UI.messageSheet(m, ch, { setReply, toggleReact, msgMenuActions }); }, 420);
   }, { passive: true });
   ["touchend", "touchmove", "touchcancel"].forEach(n => list.addEventListener(n, () => clearTimeout(pressT), { passive: true }));
+  swipeRows(list, ".msg", row => {
+    const m = S.cache[cid].messages.find(x => x.id === +row.dataset.id);
+    if (!m || m.deleted) return {};
+    return { right: { label: "返信", icon: "reply", tone: "accent", run: () => setReply(m) },
+             left: { label: "👍", tone: "warn", run: () => toggleReact(m.id, "👍") } };
+  });
 
   function toggleReact(mid, emoji) { api(`/api/messages/${mid}/reactions`, { method: "POST", body: { emoji } }).then(() => refreshReactions(mid)).catch(fail); }
   function setReply(m) {
@@ -665,9 +674,15 @@ async function teamTaskCreate(t) {
 }
 
 /* ---------- ファイルビューア ---------- */
-async function openViewer(f) {
+async function openViewer(f, list = []) {
   const stage = h(`<div class="viewer"><div class="viewer-stage center"><div class="empty">読み込み中…</div></div></div>`);
-  const ov = modal(f.name, stage, { wide: true });
+  const ov = modal(list.length > 1 ? `${f.name}（${list.indexOf(f) + 1}/${list.length}）` : f.name, stage, { wide: true });
+  if (list.length > 1) {
+    const go = d => { const i = list.indexOf(f), n = list[(i + d + list.length) % list.length]; ov.close(); openViewer(n, list); };
+    swipeNav(stage, () => go(-1), () => go(1));
+    const key = e => { if (!document.body.contains(ov)) return removeEventListener("keydown", key); if (e.key === "ArrowRight") go(1); if (e.key === "ArrowLeft") go(-1); };
+    addEventListener("keydown", key);
+  }
   const extra = $(".head-extra", ov);
   extra.className = "row";
   extra.innerHTML = `<span class="small muted">${KIND_NAME[f.kind] || ""} · ${fmtSize(f.size || 0)}</span>
@@ -743,22 +758,77 @@ function editProfile() {
   const colors = ["#5b7cfa", "#14b8a6", "#f59e0b", "#ec4899", "#8b5cf6", "#10b981", "#ef6c4a", "#0ea5e9", "#64748b"];
   const f = (n, label, type = "text") => `<label class="field"><span>${label}</span><input class="input" name="${n}" type="${type}" value="${esc(u[n] || "")}"></label>`;
   const ov = modal("プロフィールを編集", `<form>
-    <div class="row" style="align-items:flex-start;gap:14px">${avatar(u, 56, false)}<div class="grow">${f("name", "表示名")}${f("kana", "ふりがな")}</div></div>
+    <div class="avatar-edit">
+      <div class="avatar-preview">${avatar(u, 88, false)}</div>
+      <div class="grow"><div class="small" style="font-weight:700;margin-bottom:6px">アイコン</div>
+        <div class="row wrap" style="gap:8px"><button type="button" class="btn sm" data-pick>${icon("plus")} 写真を選ぶ</button>
+        <button type="button" class="btn sm ghost" data-unset ${u.avatar_path ? "" : "hidden"}>写真を外す</button></div>
+        <div class="small muted" style="margin-top:6px">中央を正方形に切り抜いて保存します。写真はチームのメンバーにだけ見えます。</div>
+        <input type="file" accept="image/*" hidden data-file></div></div>
+    <div class="row"><div class="grow">${f("name", "表示名")}</div><div class="grow">${f("kana", "ふりがな")}</div></div>
     <div class="row"><div class="grow">${f("title", "役割")}</div><div class="grow">${f("dept", "部署")}</div></div>
     <div class="row"><div style="width:84px">${f("status_emoji", "状態")}</div><div class="grow">${f("status_text", "ひとこと（例: 15時まで外出）")}</div></div>
     <div class="row"><div class="grow">${f("email", "メール", "email")}</div><div class="grow">${f("phone", "電話", "tel")}</div></div>
     <label class="field"><span>自己紹介</span><textarea class="input" name="bio" rows="3">${esc(u.bio || "")}</textarea></label>
-    <div class="field"><span>色</span><div class="row wrap">${colors.map(c => `<button type="button" class="avatar" data-col="${c}" style="--s:30px;--c:${c};${c === u.color ? "outline:3px solid var(--accent);outline-offset:2px" : ""}"></button>`).join("")}</div></div>
+    <div class="field"><span>色（写真が無いときの背景）</span><div class="row wrap">${colors.map(c => `<button type="button" class="avatar" data-col="${c}" style="--s:30px;--c:${c};${c === u.color ? "outline:3px solid var(--accent);outline-offset:2px" : ""}"></button>`).join("")}</div></div>
     ${f("password", "新しいパスワード（変えるときだけ・8 文字以上）", "password")}
   </form>`, { foot: `<button class="btn" data-c>やめる</button><button class="btn primary" data-s>保存</button>` });
-  let color = u.color;
-  $$("[data-col]", ov).forEach(b => b.onclick = () => { color = b.dataset.col; $$("[data-col]", ov).forEach(x => x.style.outline = x === b ? "3px solid var(--accent)" : ""); });
+  let color = u.color, photo = null, unset = false;
+  const preview = () => {
+    const img = photo ? photo.url : (!unset && S.avatarUrls[u.id]);
+    $(".avatar-preview", ov).innerHTML = `<span class="avatar${img ? " has-img" : ""}" style="--s:88px;--c:${esc(color)}">${img ? `<img src="${esc(img)}" alt="">` : esc(initial(u.name))}</span>`;
+    $("[data-unset]", ov).hidden = !img;
+  };
+  $("[data-pick]", ov).onclick = () => $("[data-file]", ov).click();
+  $("[data-file]", ov).onchange = async e => {
+    const file = e.target.files[0]; if (!file) return;
+    try { photo = await squareAvatar(file); unset = false; preview(); } catch (er) { fail(er); }
+  };
+  $("[data-unset]", ov).onclick = () => { photo = null; unset = true; preview(); };
+  $$("[data-col]", ov).forEach(b => b.onclick = () => { color = b.dataset.col; $$("[data-col]", ov).forEach(x => x.style.outline = x === b ? "3px solid var(--accent)" : ""); preview(); });
   $("[data-c]", ov).onclick = () => ov.close();
   $("[data-s]", ov).onclick = async () => {
     const fd = Object.fromEntries(new FormData($("form", ov)));
     if (!fd.password) delete fd.password;
-    try { S.me = await api("/api/me", { method: "PUT", body: { ...fd, color } }); await loadUsers(); ov.close(); toast("保存しました"); } catch (e) { fail(e); }
+    const btn = $("[data-s]", ov); btn.disabled = true;
+    try {
+      if (photo) await saveAvatar(photo.blob); else if (unset) await saveAvatar(null);
+      S.me = await api("/api/me", { method: "PUT", body: { ...fd, color } }); await loadUsers(); ov.close(); toast("保存しました");
+    } catch (e) { fail(e); btn.disabled = false; }
   };
+}
+
+/** 画像の中央を正方形に切り抜き、256px の WebP にする（向きは createImageBitmap が EXIF に従って補正する）。 */
+async function squareAvatar(file) {
+  if (!file.type.startsWith("image/")) throw new Error("画像ファイルを選んでください");
+  if (file.size > 20 * 1048576) throw new Error("20MB 以下の画像を選んでください");
+  const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
+  const side = Math.min(bmp.width, bmp.height), S2 = 256;
+  const cv = document.createElement("canvas"); cv.width = cv.height = S2;
+  const ctx = cv.getContext("2d"); ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(bmp, (bmp.width - side) / 2, (bmp.height - side) / 2, side, side, 0, 0, S2, S2);
+  bmp.close && bmp.close();
+  const blob = await new Promise(r => cv.toBlob(r, "image/webp", 0.86)) || await new Promise(r => cv.toBlob(r, "image/png"));
+  return { blob, url: URL.createObjectURL(blob) };
+}
+async function saveAvatar(blob) {
+  const old = S.me.avatar_path;
+  let path = "";
+  if (blob) {
+    path = `${S.me.team_id}/avatars/${crypto.randomUUID()}.webp`;
+    must(await SB.storage.from("files").upload(path, blob, { contentType: "image/webp", upsert: false }));
+  }
+  must(await SB.from("profiles").update({ avatar_path: path }).eq("id", S.me.id));
+  if (old) await SB.storage.from("files").remove([old]);
+}
+async function loadAvatars(list) {
+  S.avatarUrls = S.avatarUrls || {};
+  const want = list.filter(u => u.avatar_path);
+  for (const u of list) if (!u.avatar_path) delete S.avatarUrls[u.id];
+  if (!want.length) return;
+  const { data } = await SB.storage.from("files").createSignedUrls(want.map(u => u.avatar_path), 86400);
+  const byPath = Object.fromEntries((data || []).filter(d => d.signedUrl).map(d => [d.path, d.signedUrl]));
+  for (const u of want) if (byPath[u.avatar_path]) S.avatarUrls[u.id] = byPath[u.avatar_path];
 }
 
 window.addEventListener("DOMContentLoaded", () => boot().catch(e => { document.body.innerHTML = `<div class="empty"><b>起動できませんでした</b>${esc(e.message)}</div>`; }));

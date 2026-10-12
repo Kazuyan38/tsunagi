@@ -9,6 +9,14 @@ function screenOn(handlers) {
 }
 const greet = () => { const h = new Date().getHours(); return h < 5 ? "おつかれさまです" : h < 11 ? "おはようございます" : h < 18 ? "こんにちは" : "おつかれさまです"; };
 
+/** チャンネルを最新のメッセージまで既読にする（一覧の左スワイプ用）。 */
+async function readChannel(cid) {
+  const { data } = await SB.from("messages").select("id").eq("channel_id", cid).order("id", { ascending: false }).limit(1);
+  if (data && data[0]) await markRead(cid, data[0].id);
+  toast("既読にしました");
+}
+async function setMailStatus(id, body, msg) { await api(`/api/mail/${id}`, { method: "PUT", body }); toast(msg); emit("mail"); }
+
 /* ================================================================ ホーム */
 async function renderHome(el) {
   const d = new Date();
@@ -17,6 +25,12 @@ async function renderHome(el) {
       <div class="home-greet"><div class="muted small">${d.getMonth() + 1}月${d.getDate()}日（${WD[d.getDay()]}）</div>
         <h1>${greet()}、${esc(S.me.name.split(/\s/).pop())}さん</h1>
         <p class="home-summary muted">読み込み中…</p></div>
+      <nav class="home-stats" aria-label="今日の数字">
+        <button class="stat" data-goto="chat" data-stat="unread"><span class="stat-ico">${icon("chat")}</span><span class="stat-n">–</span><span class="stat-l"><span class="l-long">未読メッセージ</span><span class="l-short">未読</span></span></button>
+        <button class="stat" data-goto="mail" data-stat="mail"><span class="stat-ico">${icon("mail")}</span><span class="stat-n">–</span><span class="stat-l"><span class="l-long">対応メール</span><span class="l-short">メール</span></span></button>
+        <button class="stat" data-goto="calendar" data-stat="events"><span class="stat-ico">${icon("cal")}</span><span class="stat-n">–</span><span class="stat-l"><span class="l-long">今日の予定</span><span class="l-short">予定</span></span></button>
+        <button class="stat" data-goto="tasks" data-stat="tasks"><span class="stat-ico">${icon("task")}</span><span class="stat-n">–</span><span class="stat-l"><span class="l-long">担当タスク</span><span class="l-short">タスク</span></span></button>
+      </nav>
     </header>
     <div class="home-grid">
       <section class="card home-card" data-k="attention"><h2 class="section-title">${icon("chat")} 未読のメッセージ</h2><div class="hc-body"></div></section>
@@ -26,6 +40,13 @@ async function renderHome(el) {
       <section class="card home-card" data-k="tasks"><h2 class="section-title">${icon("task")} あなたの担当タスク</h2><div class="hc-body"><div class="muted small">読み込み中…</div></div></section>
     </div></div>`;
 
+  // 数字は 0 なら灰色、1 以上なら色付き、要注意（メンション・期日超過）は赤
+  const setStat = (k, n, tone = "", tip = "") => {
+    const b = $(`[data-stat="${k}"]`, el); if (!b) return;
+    $(".stat-n", b).textContent = n;
+    b.className = `stat${n ? " has" : ""}${tone ? " " + tone : ""}`;
+    b.title = tip;
+  };
   const load = async () => {
     const h = await api("/api/home");
     if (!document.body.contains(el.firstElementChild)) return;
@@ -44,21 +65,29 @@ async function renderHome(el) {
       ${h.working.length ? `<div class="row wrap" style="gap:6px">${h.working.map(w => `<span class="chip" title="${esc(kinds[w.kind]?.label)}">${avatar(U(w.user_id), 18, false)} ${esc(U(w.user_id).name.split(/\s/)[0])} <span style="color:${kinds[w.kind]?.color}">${esc(kinds[w.kind]?.label || "")}</span></span>`).join("")}</div>` : `<div class="muted small">出勤予定のメンバーはいません</div>`}`;
     const unreadTotal = att.reduce((a, c) => a + c.unread, 0);
     const parts = [unreadTotal ? `未読 ${unreadTotal} 件` : "", h.mail.length ? `メール ${h.mail.length} 件` : "", h.events.length ? `予定 ${h.events.length} 件` : ""].filter(Boolean);
+    setStat("unread", unreadTotal, att.some(c => c.mentions) ? "alert" : "");
+    setStat("mail", h.mail.length);
+    setStat("events", h.events.length);
     $(".home-summary", el).textContent = parts.length ? `今日は ${parts.join("・")}。上から順に片付ければ大丈夫です。` : "いま対応が必要なことはありません。";
   };
   const loadTasks = async () => {
     const b = $('[data-k="tasks"] .hc-body', el); if (!b) return;
     const rows = (await SB.from("team_tasks").select("*").eq("assignee_id", S.me.id).in("status", ["todo", "doing", "waiting"]).order("due", { nullsFirst: false }).limit(30)).data || [];
     rows.sort(byDue);
+    const over = rows.filter(t => t.due && t.due < todayStr()).length;
+    setStat("tasks", rows.length, over ? "alert" : "", over ? `うち ${over} 件が期日超過` : "");
     b.innerHTML = rows.length ? `<div class="list">${rows.slice(0, 6).map(t => `<button class="li" data-tt="${t.id}"><span class="grow" style="min-width:0"><div class="ellipsis">${esc(t.title)}</div><div class="tt-meta">${dueLabel(t.due)}<span class="status-pill st-${t.status}">${TASK_STATUS[t.status]}</span></div></span></button>`).join("")}</div>`
       : `<div class="done-state">${icon("check")} あなたの担当タスクはありません</div>`;
   };
   el.onclick = e => {
     const c = e.target.closest("[data-ch]"); if (c) return UI.openChannel(+c.dataset.ch);
     const m = e.target.closest("[data-mail]"); if (m) return UI.openMail(+m.dataset.mail);
-    const ev = e.target.closest("[data-ev]"); if (ev) return UI.go("calendar");
+    const ev = e.target.closest("[data-ev]"); if (ev) return UI.goto("calendar");
+    const st = e.target.closest("[data-goto]"); if (st) return UI.goto(st.dataset.goto);
     const tt = e.target.closest("[data-tt]"); if (tt) return openTeamTask(+tt.dataset.tt);
   };
+  swipeRows(el, ".home-card .li[data-ch]", row => ({ left: { label: "既読にする", icon: "check", tone: "ok", run: () => readChannel(+row.dataset.ch) } }));
+  swipeRows(el, ".home-card .mail-row", row => ({ left: { label: "完了", icon: "check", tone: "ok", run: () => setMailStatus(+row.dataset.mail, { status: "done" }, "完了にしました") } }));
   screenOn({ channels: () => load(), mail: load, mail_read: load, events: load, shifts: load, team_tasks: loadTasks });
   await load(); loadTasks();
 }
@@ -106,9 +135,19 @@ async function renderMail(el, { mobile = false } = {}) {
     $(".mail-status", el).innerHTML = st.configured
       ? `${icon("mail")} ${esc(st.address)} · ${st.mode === "gmail-error" ? `<span style="color:var(--danger)">同期エラー: ${esc(st.error)}</span>` : `Gmail 同期 ${st.last_sync ? fmtRel(st.last_sync) : "待機中"}`}`
       : `${icon("info")} 共有 Gmail はまだ設定されていません${S.me.role === "admin" ? "（管理 → 共有 Gmail から設定できます）" : "（管理者が設定します）"}`;
+    items._rows = d.items;
     items.innerHTML = d.items.length ? d.items.map(m => mailRow(m)).join("") : `<div class="empty"><b>メールはありません</b></div>`;
     if (mailState.sel) $(`[data-mail="${mailState.sel}"]`, items)?.classList.add("sel");
   };
+  swipeRows(items, ".mail-row", row => {
+    const m = (items._rows || []).find(x => x.id === +row.dataset.mail);
+    if (!m || m.direction !== "in") return {};
+    return {
+      left: m.status === "done" ? { label: "未対応に戻す", icon: "reply", tone: "warn", run: () => setMailStatus(m.id, { status: "open" }, "未対応に戻しました") }
+                                : { label: "完了", icon: "check", tone: "ok", run: () => setMailStatus(m.id, { status: "done" }, "完了にしました") },
+      right: m.assignee_id === S.me.id ? null : { label: "自分が担当", icon: "user", tone: "accent", run: () => setMailStatus(m.id, { assignee_id: S.me.id, status: "doing" }, "担当になりました") },
+    };
+  });
   boxes.onclick = e => { const b = e.target.closest("[data-box]"); if (b) { mailState.box = b.dataset.box; load(); } };
   let qt; $("input", el).oninput = e => { clearTimeout(qt); qt = setTimeout(() => { mailState.q = e.target.value.trim(); load(); }, 250); };
   $("[data-sync]", el).onclick = async e => { e.currentTarget.disabled = true; try { const r = await api("/api/mail/sync", { method: "POST" }); toast(r.mode === "none" ? "共有 Gmail が未設定です" : `同期しました（新着 ${r.added} 件）`); load(); } catch (er) { fail(er); } finally { e.currentTarget.disabled = false; } };
@@ -158,7 +197,7 @@ async function renderMailDetail(el, id, quiet) {
     if (t.closest("[data-status]")) return put({ status: t.closest("[data-status]").dataset.status, ...(m.assignee_id ? {} : { assignee_id: S.me.id }) });
     if (t.closest("[data-star]")) return put({ starred: m.starred ? 0 : 1 });
     if (t.closest("[data-archive]")) return put({ archived: m.archived ? 0 : 1 });
-    if (t.closest("[data-file]")) return openViewer(m.files.find(f => f.id === +t.closest("[data-file]").dataset.file));
+    if (t.closest("[data-file]")) return openViewer(m.files.find(f => f.id === +t.closest("[data-file]").dataset.file), m.files);
     if (t.closest("[data-reply]")) return composeMail({ to: m.from_addr, subject: /^re:/i.test(m.subject) ? m.subject : "Re: " + m.subject, in_reply_to: m.id, quote: m });
     if (t.closest("[data-share]")) return pickChannel("メールを共有するチャンネル", async cid => { await api(`/api/mail/${id}/share`, { method: "POST", body: { channel_id: cid, body: "" } }); toast("共有しました"); });
     if (t.closest("[data-task]")) return taskFromText(`${m.subject}\n\n${m.from_name} <${m.from_addr}>\n${m.body.slice(0, 600)}`, `共有メール「${m.subject}」`);
@@ -237,6 +276,8 @@ async function renderCalendar(el, { mobile = false } = {}) {
     if (tg.closest("[data-ev]")) return editEvent(evs.find(x => x.id === +tg.closest("[data-ev]").dataset.ev));
     if (tg.closest("[data-day]")) return editEvent(null, tg.closest("[data-day]").dataset.day);
   };
+  if (view === "month") swipeNav(body, () => { calState.month = new Date(base.getFullYear(), base.getMonth() - 1, 1); renderCalendar(el, { mobile }); },
+    () => { calState.month = new Date(base.getFullYear(), base.getMonth() + 1, 1); renderCalendar(el, { mobile }); });
   screenOn({ events: () => renderCalendar(el, { mobile }) });
 }
 
@@ -320,6 +361,18 @@ async function renderShifts(el, { mobile = false } = {}) {
         await api("/api/shifts", { method: "PUT", body: { user_id: c.dataset.u, date: c.dataset.d, kind: b.dataset.k } }).catch(fail); }
     });
   };
+  const moveWeek = n => { const d = new Date(mon); d.setDate(d.getDate() + n); shiftState.week = d; renderShifts(el, { mobile }); };
+  if (mobile) {
+    const moveDay = n => {
+      const d = new Date(shiftState.day + "T00:00"); d.setDate(d.getDate() + n);
+      shiftState.day = ymd(d);
+      if (!days.some(x => ymd(x) === shiftState.day)) { const w = new Date(mon); w.setDate(w.getDate() + 7 * n); shiftState.week = w; }
+      renderShifts(el, { mobile });
+    };
+    const card = $(".list.card", el); if (card) swipeNav(card, () => moveDay(-1), () => moveDay(1));
+  } else {
+    const grid = $(".shift-grid", el); if (grid) swipeNav(grid.parentElement, () => moveWeek(-7), () => moveWeek(7));
+  }
   screenOn({ shifts: () => renderShifts(el, { mobile }), users: () => renderShifts(el, { mobile }) });
 }
 
@@ -414,7 +467,7 @@ async function renderFiles(el, { mobile = false } = {}) {
     const t = e.target;
     if (t.closest("[data-up]")) return fi.click();
     if (t.closest("[data-k]")) { filesState.kind = t.closest("[data-k]").dataset.k; $$("[data-k]", el).forEach(b => b.classList.toggle("on", b === t.closest("[data-k]"))); return draw(); }
-    if (t.closest("[data-f]")) return openViewer(grid._list.find(f => f.id === +t.closest("[data-f]").dataset.f));
+    if (t.closest("[data-f]")) return openViewer(grid._list.find(f => f.id === +t.closest("[data-f]").dataset.f), grid._list);
   };
   fi.onchange = () => { up([...fi.files]); fi.value = ""; };
   const page = $(".files-page", el);
@@ -500,19 +553,26 @@ async function renderTeamTasks(el, right) {
     if (ck) {
       e.stopPropagation();
       const t = rows.find(x => x.id === +ck.dataset.check);
-      const status = t.status === "done" ? "todo" : "done";
-      ck.classList.toggle("on", status === "done");
-      try {
-        must(await SB.from("team_tasks").update({ status }).eq("id", t.id));
-        await SB.from("team_task_logs").insert({ task_id: t.id, team_id: S.me.team_id, user_id: S.me.id, body: status === "done" ? "完了にしました" : "未完了に戻しました" });
-        if (status === "done") toast("完了にしました");
-        draw();
-      } catch (er) { fail(er); }
-      return;
+      ck.classList.toggle("on", t.status !== "done");
+      return toggleDone(t);
     }
     const row = tg.closest("[data-t]"); if (row) openTeamTask(+row.dataset.t);
   };
   el.onkeydown = e => { if (e.key === "Enter" && e.target.matches("[data-t]")) openTeamTask(+e.target.dataset.t); };
+  const log = (t, body) => SB.from("team_task_logs").insert({ task_id: t.id, team_id: S.me.team_id, user_id: S.me.id, body });
+  async function toggleDone(t) {
+    const status = t.status === "done" ? "todo" : "done";
+    try { must(await SB.from("team_tasks").update({ status }).eq("id", t.id)); await log(t, status === "done" ? "完了にしました" : "未完了に戻しました");
+      if (status === "done") toast("完了にしました"); draw(); } catch (er) { fail(er); }
+  }
+  swipeRows(el, ".tt-row", row => {
+    const t = rows.find(x => x.id === +row.dataset.t); if (!t) return {};
+    return {
+      right: { label: t.status === "done" ? "未完了に戻す" : "完了", icon: "check", tone: t.status === "done" ? "warn" : "ok", run: () => toggleDone(t) },
+      left: t.assignee_id === S.me.id ? null : { label: "自分が担当", icon: "user", tone: "accent", run: async () => {
+        must(await SB.from("team_tasks").update({ assignee_id: S.me.id }).eq("id", t.id)); await log(t, "担当を引き受けました"); toast("担当になりました"); draw(); } },
+    };
+  });
   screenOn({ team_tasks: draw, users: draw });
   await draw();
 }
@@ -579,6 +639,10 @@ async function renderMyTasks(el, right) {
     try { const r = await api("/api/tasks", { method: "POST", body: { title: f.title.value, due: f.due.value, source: "つなぎ" } }); f.reset(); toast(r.mode === "taskbuster" ? "タスクバスターに登録しました" : "登録しました"); draw(); } catch (er) { fail(er); }
   };
   el.onclick = e => { const b = e.target.closest("[data-tdone]"); if (b) { b.classList.add("on"); doneTask(b.dataset.tdone).then(draw); } };
+  swipeRows(el, ".task-body .li", row => {
+    const id = row.querySelector("[data-tdone]")?.dataset.tdone; if (!id) return {};
+    return { right: { label: "完了", icon: "check", tone: "ok", run: () => doneTask(id).then(draw) } };
+  });
   $("[data-conn]", right).onclick = () => tbSettings(draw);
   screenOn({ tasks: draw });
   await draw();
