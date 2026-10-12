@@ -337,7 +337,7 @@ function editEvent(ev, day) {
   const colors = ["", "#14b8a6", "#f59e0b", "#ec4899", "#8b5cf6", "#ef6c4a"];
   const ov = modal(ev ? "予定" : "予定を追加", `<form>
     <label class="field"><span>タイトル</span><input class="input" name="title" value="${esc(e.title)}" ${ev ? "" : "autofocus"} required></label>
-    <div class="row"><label class="field grow"><span>日付</span><input class="input" type="date" name="date" value="${e.start.slice(0, 10)}"></label>
+    <div class="ev-when"><label class="field f-date"><span>日付</span><input class="input" type="date" name="date" value="${e.start.slice(0, 10)}"></label>
       <label class="field"><span>開始</span><input class="input" type="time" name="s" value="${e.start.slice(11, 16)}"></label>
       <label class="field"><span>終了</span><input class="input" type="time" name="e" value="${e.end.slice(11, 16)}"></label></div>
     <label class="row small" style="margin:-4px 0 14px"><input type="checkbox" name="all_day" ${e.all_day ? "checked" : ""}> 終日</label>
@@ -793,7 +793,28 @@ async function renderAdmin(el) {
         <input class="input grow" name="token" type="password" placeholder="github_pat_…（読み取り専用）" autocomplete="new-password" style="min-width:220px">
         <button class="btn primary">確認して保存</button>
         ${st.configured ? `<button type="button" class="btn danger" data-repoclear>切断</button>` : ""}</form>
-      <details class="small muted" style="margin-top:8px"><summary>トークンの作り方</summary>GitHub → Settings → Developer settings → Fine-grained tokens → Generate new token。Repository access で対象のリポジトリだけを選び、Permissions の Contents を Read-only にします（ほかは No access のまま）。</details>`;
+      <div class="pat-steps small">
+        <a class="btn sm" data-patlink target="_blank" rel="noopener">${icon("share")} GitHub で読み取り専用の鍵を作る</a>
+        <ol>
+          <li>開いた画面は名前・期限（1 年）・権限（Contents: 読み取り）が入力済みです</li>
+          <li><b>Repository access</b> で「Only select repositories」を選び、<b class="pat-repo"></b> だけを選ぶ</li>
+          <li>一番下の <b>Generate token</b> を押し、表示された <code>github_pat_…</code> をコピーして上の欄に貼る</li>
+        </ol></div>`;
+    // 持ち主（target_name）を入れて、名前・権限・期限を入力済みの作成画面を開く（GitHub の template URL）
+    const patLink = () => {
+      const repo = $("[data-repocfg] [name=repo]", el).value.trim();
+      const owner = repo.split("/")[0] || "", name = repo.split("/")[1] || "";
+      const u = new URL("https://github.com/settings/personal-access-tokens/new");
+      u.searchParams.set("name", `tsunagi-read-${name}`.slice(0, 40));
+      u.searchParams.set("description", `つなぎ（チーム連絡ツール）から ${repo} を読むための読み取り専用トークン`);
+      if (owner) u.searchParams.set("target_name", owner);
+      u.searchParams.set("expires_in", "366");
+      u.searchParams.set("contents", "read");
+      $("[data-patlink]", el).href = u.toString();
+      $(".pat-repo", el).textContent = repo || "対象のリポジトリ";
+    };
+    patLink();
+    $("[data-repocfg] [name=repo]", el).addEventListener("input", patLink);
     $("[data-repocfg]", el).onsubmit = async e => {
       e.preventDefault(); const f = e.target, b = $("button.primary", f); b.disabled = true; b.textContent = "GitHub に接続中…";
       try {

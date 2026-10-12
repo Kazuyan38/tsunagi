@@ -438,6 +438,9 @@ button.read-mark:hover { background: var(--bg-2); color: var(--ink-2); }
 .tt-add-more .input[type=date] { width: 150px; } .tt-add-more select.input { width: 150px; }
 .kind-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
 
+.pat-steps { margin-top: 12px; padding: 12px 14px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; }
+.pat-steps ol { margin: 10px 0 0; padding-left: 20px; color: var(--ink-2); line-height: 1.8; }
+
 /* リポジトリ */
 .repo { display: grid; grid-template-columns: 340px minmax(0, 1fr); height: 100vh; min-height: 0; }
 .repo.is-mobile { display: block; height: auto; }
@@ -489,6 +492,11 @@ mark { background: #ffe58a; color: inherit; border-radius: 3px; padding: 0 1px; 
 .md-table th { background: var(--surface-2); font-weight: 700; }
 .md-body hr { border: 0; border-top: 1px solid var(--line); margin: 20px 0; }
 .md-body a[data-repo-link] { text-decoration: underline dotted; }
+
+/* 日付・時刻の入力: 端末ごとの最小幅で枠からはみ出さないようにする */
+input.input[type=date], input.input[type=time] { min-width: 0; max-width: 100%; -webkit-appearance: none; appearance: none; display: block; }
+.ev-when { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.ev-when .field { min-width: 0; }
 
 /* スワイプ */
 .swiping { position: relative; z-index: 1; background: var(--surface) !important; will-change: transform; }
