@@ -285,7 +285,6 @@ async function markRead(cid, mid) {
 
 function renderLogin(notice) {
   document.body.className = "is-login";
-  let saved = ""; try { saved = localStorage.getItem("tsunagi_invite") || ""; } catch { }
   document.body.innerHTML = `<main class="login"><div class="login-stage">
     <div class="owl-stage" aria-hidden="true"><div class="owl-shadow"></div><div class="owl" id="owl"></div></div>
     <div class="card login-card">
@@ -293,19 +292,20 @@ function renderLogin(notice) {
       ${notice ? `<p class="login-notice">${esc(notice)}</p>` : ""}
       <div class="seg login-seg"><button type="button" data-m="login" class="on">ログイン</button><button type="button" data-m="register">新規登録</button></div>
       <form id="lf" autocomplete="on">
-        <label class="field"><span>招待コード</span><input class="input code-input" name="invite" value="${esc(saved)}" placeholder="XXXXX-XXXXX" autocomplete="off" autocapitalize="characters" spellcheck="false" required></label>
+        <label class="field" id="inviteField" hidden><span>招待コード</span><input class="input code-input" name="invite" placeholder="XXXXX-XXXXX" autocomplete="off" autocapitalize="characters" spellcheck="false"></label>
         <label class="field"><span>ID（半角英数）</span><input class="input" name="login" autocomplete="username" autocapitalize="off" spellcheck="false" required></label>
         <label class="field" id="nameField" hidden><span>表示名</span><input class="input" name="name" autocomplete="name"></label>
         <label class="field"><span>パスワード（8 文字以上）</span><input class="input" name="password" type="password" autocomplete="current-password" minlength="8" required></label>
-        <label class="row small muted" style="margin:-2px 0 16px;gap:8px"><input type="checkbox" name="remember" ${saved ? "checked" : ""}> この端末に招待コードを保存する</label>
         <button class="btn primary" style="width:100%;height:46px;font-size:15px" id="lbtn">ログイン</button>
       </form>
-      <p class="small muted login-foot">招待コードは管理者から受け取ってください。データはチームのメンバーにしか見えません。</p>
+      <p class="small muted login-foot">新規登録には管理者から受け取った招待コードが必要です。データはチームのメンバーにしか見えません。</p>
     </div></div></main>`;
   const f = $("#lf"); let mode = "login";
   $$(".login-seg button").forEach(b => b.onclick = () => {
     mode = b.dataset.m; $$(".login-seg button").forEach(x => x.classList.toggle("on", x === b));
+    // 招待コードは新規登録のときだけ（ログインは ID とパスワードだけ）
     $("#nameField").hidden = mode !== "register"; f.name.required = mode === "register";
+    $("#inviteField").hidden = mode !== "register"; f.invite.required = mode === "register";
     f.password.autocomplete = mode === "register" ? "new-password" : "current-password";
     $("#lbtn").textContent = mode === "register" ? "登録してはじめる" : "ログイン";
   });
@@ -317,13 +317,13 @@ function renderLogin(notice) {
     e.preventDefault();
     const btn = $("#lbtn"); btn.disabled = true; btn.textContent = "確認しています…";
     try {
-      await authCall(mode, { invite: f.invite.value, login: f.login.value, password: f.password.value, name: f.name.value });
-      try { f.remember.checked ? localStorage.setItem("tsunagi_invite", f.invite.value) : localStorage.removeItem("tsunagi_invite"); } catch { }
+      await authCall(mode, { invite: mode === "register" ? f.invite.value : "", login: f.login.value, password: f.password.value, name: f.name.value });
+      try { localStorage.removeItem("tsunagi_invite"); } catch { }   // 以前は招待コードを端末に保存していた。もう使わないので消す
       location.reload();
     } catch (err) { fail(err); btn.disabled = false; btn.textContent = mode === "register" ? "登録してはじめる" : "ログイン"; }
   };
   startOwl($("#owl"));
-  (saved ? f.login : f.invite).focus();
+  f.login.focus();
 }
 
 /** ログイン画面のフクロウ。24 コマの首振りをポインタの位置に追従させる（静止画で始め、読み込めたら差し替え）。 */

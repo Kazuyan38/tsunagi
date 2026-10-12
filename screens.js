@@ -770,7 +770,7 @@ async function renderAdmin(el) {
   if (S.me.role !== "admin") { el.innerHTML = `<div class="empty"><b>管理者だけが開けます</b></div>`; return; }
   el.innerHTML = `<div class="page"><header class="page-head"><h1>管理</h1><span class="small muted">データと参加者の管理。操作はすべて監査ログに残ります</span></header>
     <div class="admin-grid">
-      <section class="card admin-card" data-k="invites"><h2>招待コード</h2><p class="desc">新規登録とログインの両方に必要です。漏れたら「無効にする」で即座に締め出せます（既存メンバーには新しいコードを伝えてください）。</p><div class="body"></div></section>
+      <section class="card admin-card" data-k="invites"><h2>招待コード</h2><p class="desc">新規登録のときだけ必要です（ログインは ID とパスワードだけ）。漏れたら「無効にする」で、そのコードでの新規登録を止められます。メンバーを外すときは下の「メンバー」で利用を停止してください。</p><div class="body"></div></section>
       <section class="card admin-card" data-k="members"><h2>メンバー</h2><p class="desc">利用停止にすると、その人はすぐにどのデータも読めなくなります（データは残ります）。</p><div class="body"></div></section>
       <section class="card admin-card" data-k="mail"><h2>共有 Gmail</h2><p class="desc">Gmail の 2 段階認証を有効にし、アプリパスワード（16 桁）を発行して入力します。パスワードはサーバにだけ保存され、画面には二度と表示されません。</p><div class="body"></div></section>
       <section class="card admin-card" data-k="repo"><h2>GitHub リポジトリ</h2><p class="desc">会社の資料リポジトリを「リポジトリ」画面で読めるようにします。<b>読み取り専用</b>の Fine-grained トークン（対象リポジトリだけ・Contents: Read-only）を使ってください。トークンはサーバにだけ保存され、画面には二度と表示されません。</p><div class="body"></div></section>
@@ -886,7 +886,7 @@ async function renderAdmin(el) {
     const cp = t.closest("[data-copy]"); if (cp) { await navigator.clipboard.writeText(cp.dataset.copy).catch(() => { }); return toast("コピーしました"); }
     const rv = t.closest("[data-revoke]");
     if (rv) {
-      if (!await confirmBox(`招待コード ${rv.dataset.revoke} を無効にしますか？このコードでは誰もログイン・登録できなくなります。`, "無効にする", true)) return;
+      if (!await confirmBox(`招待コード ${rv.dataset.revoke} を無効にしますか？このコードでは新しく登録できなくなります（登録済みのメンバーはそのまま使えます）。`, "無効にする", true)) return;
       try { must(await SB.rpc("revoke_invite", { p_code: rv.dataset.revoke })); invites(); audit(); } catch (er) { fail(er); }
       return;
     }
