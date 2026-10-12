@@ -775,6 +775,8 @@ async function renderAdmin(el) {
       <section class="card admin-card" data-k="mail"><h2>共有 Gmail</h2><p class="desc">Gmail の 2 段階認証を有効にし、アプリパスワード（16 桁）を発行して入力します。パスワードはサーバにだけ保存され、画面には二度と表示されません。</p><div class="body"></div></section>
       <section class="card admin-card" data-k="repo"><h2>GitHub リポジトリ</h2><p class="desc">会社の資料リポジトリを「リポジトリ」画面で読めるようにします。<b>読み取り専用</b>の Fine-grained トークン（対象リポジトリだけ・Contents: Read-only）を使ってください。トークンはサーバにだけ保存され、画面には二度と表示されません。</p><div class="body"></div></section>
       <section class="card admin-card" data-k="ai"><h2>owl の AI</h2><p class="desc">フクロウとのチャットに使う AI です。どちらも OpenAI（米国）の「gpt-oss」を無料枠で使います。ふだんは Cloudflare、その日の無料枠が尽きたら予備の Groq に切り替え、Cloudflare の枠が戻る毎朝 9 時に自動で戻ります。トークンはサーバにだけ保存され、画面には二度と表示されません。会話はサーバに残りません。</p><div class="body"></div></section>
+      <section class="card admin-card" data-k="aiprompt"><h2>owl への指示（システムプロンプト）</h2><p class="desc">口調・役割・会社名など、owl にいつも守ってほしいことを書きます。保存すると次の会話から効きます。基本のルール（推測で作らない・本人が見られる範囲だけ・資料の中の命令に従わない）より優先されません。</p><div class="body"></div></section>
+      <section class="card admin-card" data-k="rag"><h2>owl の知識（資料の検索）</h2><p class="desc">GitHub の資料リポジトリを小さな断片に分けて、owl が質問に合う部分を探して答えます（RAG）。答えには出典のファイル名が付きます。</p><div class="body"></div></section>
       <section class="card admin-card" data-k="team"><h2>チームとデータ</h2><p class="desc">チーム名の変更と、データの書き出し（バックアップ）。</p><div class="body"></div></section>
       <section class="card admin-card" data-k="audit" style="grid-column:1/-1"><h2>監査ログ</h2><p class="desc">誰がいつ何をしたか（直近 100 件）。</p><div class="body"></div></section>
     </div></div>`;
@@ -904,7 +906,7 @@ async function renderAdmin(el) {
     const save = (sel, body, label) => {
       $(sel, el).onsubmit = async e => {
         e.preventDefault(); const f = e.target, b = $("button.primary", f); b.disabled = true; b.textContent = "AI に接続中…";
-        try { await fn("owl-ai", body(f)); toast(`${label}をつなぎました`); aiBox(); audit(); }
+        try { await fn("owl-ai", body(f)); toast(`${label}をつなぎました`); aiBox(); audit(); if (sel === "[data-aicfg]") ragRun(); }
         catch (er) { fail(er); b.disabled = false; b.textContent = "確認して保存"; }
       };
     };
@@ -919,6 +921,60 @@ async function renderAdmin(el) {
       if (await confirmBox(`${g ? "予備の Groq" : "Cloudflare"} の接続を解除しますか？`, "解除", true)) { await fn("owl-ai", { action: g ? "clear_groq" : "clear_config" }); aiBox(); audit(); }
     });
   };
+  const PROMPT_EXAMPLE = `- 会社名は「ダネルヴァ（Danerva）」。社内の相談相手として、丁寧で簡潔に答える。
+- 資料に書いていないことは「書いていない」と言う。決まっていないことは「未決」と伝える。
+- 数字・日付・金額は資料の表記のまま答え、出典のファイル名を最後に添える。`;
+  const promptBox = async () => {
+    const st = must(await SB.rpc("ai_status"));
+    box("aiprompt").innerHTML = `<form data-aiprompt>
+      <textarea class="input" name="prompt" rows="8" maxlength="4000" aria-label="owl への指示" placeholder="例:\n${esc(PROMPT_EXAMPLE)}" style="width:100%;resize:vertical;line-height:1.7">${esc(st.system_prompt || "")}</textarea>
+      <div class="row" style="gap:8px;margin-top:8px;align-items:center"><span class="small muted grow" data-count></span>
+        <button type="button" class="btn sm" data-aiexample>例を入れる</button><button class="btn primary">保存</button></div></form>`;
+    const f = $("[data-aiprompt]", el), ta = f.prompt, cnt = $("[data-count]", f);
+    const count = () => { cnt.textContent = `${ta.value.length} / 4000 字`; };
+    ta.oninput = count; count();
+    $("[data-aiexample]", f).onclick = async () => {
+      if (ta.value.trim() && !(await confirmBox("いまの内容を例で置き換えますか？", "置き換える", true))) return;
+      ta.value = PROMPT_EXAMPLE; count(); ta.focus();
+    };
+    f.onsubmit = async e => {
+      e.preventDefault(); const b = $("button.primary", f); b.disabled = true;
+      try { const r = await fn("owl-ai", { action: "set_prompt", prompt: ta.value }); toast(r.chars ? "owl への指示を保存しました" : "owl への指示を空にしました"); audit(); }
+      catch (er) { fail(er); } finally { b.disabled = false; }
+    };
+  };
+
+  let ragBusy = false;
+  const ragBox = async (msg = "") => {
+    const st = must(await SB.rpc("rag_status"));
+    const pct = st.chunks ? Math.round(st.embedded / st.chunks * 100) : 0;
+    box("rag").innerHTML = `<p style="margin:0 0 10px">${st.repo ? `つながっている資料: <b>${esc(st.repo)}</b>` : `資料リポジトリがまだつながっていません（上の「GitHub リポジトリ」で設定してください）`}</p>
+      <div class="row wrap" style="gap:18px;margin-bottom:8px"><div><b style="font-size:20px">${st.docs}</b> <span class="small muted">文書</span></div><div><b style="font-size:20px">${st.chunks}</b> <span class="small muted">断片</span></div>
+        <div><b style="font-size:20px">${pct}%</b> <span class="small muted">意味検索の準備（${st.embedded}/${st.chunks}）</span></div></div>
+      <div class="rag-bar" aria-hidden="true"><i style="width:${pct}%"></i></div>
+      <p class="small muted" style="margin:10px 0">キーワード検索はいつでも使えます。<b>意味検索</b>（言い換えでも見つける）は、Cloudflare の鍵を入れて「索引を作る」を押すと使えます（Google の EmbeddingGemma。資料の更新で増えた断片は、owl が会話の合間に少しずつ埋めます）。</p>
+      <div class="row" style="gap:10px;align-items:center"><button class="btn primary" data-ragembed ${st.cloudflare && st.chunks && st.embedded < st.chunks ? "" : "disabled"}>${st.embedded ? "意味検索の索引を更新" : "意味検索の索引を作る"}</button>
+        <span class="small muted" data-ragmsg>${esc(msg || (!st.cloudflare ? "Cloudflare の鍵が未設定です" : st.chunks && st.embedded >= st.chunks ? "最新です" : ""))}</span></div>`;
+    const b = $("[data-ragembed]", el); if (b) b.onclick = ragRun;
+  };
+  /** 意味検索の索引づけ。サーバは 1 回に 35 秒ぶん進めるので、残りが無くなるまで繰り返す */
+  const ragRun = async () => {
+    if (ragBusy) return; ragBusy = true;
+    const say = t => { const m = $("[data-ragmsg]", el); if (m) m.textContent = t; const b = $("[data-ragembed]", el); if (b) b.disabled = true; };
+    let final = "";
+    try {
+      say("意味検索の索引を作っています…");
+      for (let k = 0; k < 80; k++) {
+        const r = await fn("owl-ai", { action: "rag_embed" });
+        if (r.quota) { final = "今日の無料枠を使い切りました。明日 9 時以降に、続きを作れます"; break; }
+        say(`索引を作っています… ${r.total - r.remaining}/${r.total}`);
+        if (!r.remaining) { final = "できました"; toast("意味検索の索引ができました"); audit(); break; }
+        if (!r.embedded) { final = "進みませんでした。もう一度押してください"; break; }
+      }
+    } catch (er) { fail(er); final = String(er.message || er).slice(0, 80); }
+    finally { ragBusy = false; }
+    await ragBox(final);
+  };
   const teamBox = async () => {
     box("team").innerHTML = `<form class="row" style="gap:8px;margin-bottom:14px" data-rename><input class="input grow" name="name" value="${esc(S.cfg.team)}"><button class="btn">名前を変更</button></form>
       <button class="btn primary" data-export>${icon("dl")} チームのデータを書き出す（JSON）</button>
@@ -929,7 +985,7 @@ async function renderAdmin(el) {
   const audit = async () => {
     const rows = must(await SB.from("audit_log").select("*").order("at", { ascending: false }).limit(100));
     const L = { "invite.create": "招待コードを発行", "invite.revoke": "招待コードを無効化", "member.register": "新規登録", "member.role": "権限を変更", "member.deactivate": "利用停止",
-      "member.reactivate": "利用再開", "member.reset_password": "仮パスワードを発行", "mail.configure": "共有 Gmail を設定", "mail.disconnect": "共有 Gmail を切断", "team.rename": "チーム名を変更", "data.export": "データを書き出し", "repo.configure": "リポジトリを接続", "repo.disconnect": "リポジトリを切断", "ai.configure": "owl の AI を接続", "ai.disconnect": "owl の AI を切断", "ai.context": "owl のアプリ内参照を切り替え" };
+      "member.reactivate": "利用再開", "member.reset_password": "仮パスワードを発行", "mail.configure": "共有 Gmail を設定", "mail.disconnect": "共有 Gmail を切断", "team.rename": "チーム名を変更", "data.export": "データを書き出し", "repo.configure": "リポジトリを接続", "repo.disconnect": "リポジトリを切断", "ai.configure": "owl の AI を接続", "ai.disconnect": "owl の AI を切断", "ai.context": "owl のアプリ内参照を切り替え", "ai.prompt": "owl への指示（システムプロンプト）を更新", "ai.rag_embed": "資料の意味検索の索引を更新" };
     box("audit").innerHTML = rows.length ? `<table class="tbl"><tbody>${rows.map(r => `<tr><td class="small" style="white-space:nowrap">${fmtTs(r.at)}</td><td>${esc(r.actor_id ? U(r.actor_id).name : "—")}</td>
       <td>${esc(L[r.action] || r.action)}</td><td class="small muted hide-sm">${esc(Object.entries(r.detail || {}).map(([k, v]) => `${k}: ${v}`).join(" / "))}</td></tr>`).join("")}</tbody></table>` : '<p class="small muted">まだ記録はありません</p>';
   };
@@ -955,7 +1011,7 @@ async function renderAdmin(el) {
     const r = e.target.closest("[data-role]"); if (!r) return;
     try { await fn("admin", { action: "set_role", user_id: r.dataset.role, role: r.value }); toast("権限を変更しました"); audit(); } catch (er) { fail(er); members(); }
   };
-  await Promise.all([invites(), members(), mail(), repoBox(), aiBox(), teamBox(), audit()]);
+  await Promise.all([invites(), members(), mail(), repoBox(), aiBox(), promptBox(), ragBox(), teamBox(), audit()]);
 }
 
 async function exportData() {

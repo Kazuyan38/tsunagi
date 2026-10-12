@@ -163,6 +163,7 @@ button.chip:hover { border-color: var(--line-2); }
 .msg-body pre { font-family: var(--mono); font-size: 13px; background: #f3f4f8; border: 1px solid var(--line); padding: 10px 12px; border-radius: 10px; overflow-x: auto; margin: 6px 0; white-space: pre; }
 .msg-body .mention-tag { background: var(--accent-soft); color: var(--accent); padding: 0 4px; border-radius: 5px; font-weight: 600; }
 .msg-body .mention-tag.me { background: #ffe9a8; color: #8a5a00; }
+.msg-body .mention-tag.all { background: #fde7e3; color: #b0432e; }
 .msg-reply {
   font-size: 12.5px; color: var(--ink-2); border-left: 3px solid var(--line-2); padding: 1px 0 1px 8px; margin: 2px 0 4px;
   cursor: pointer; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden;
@@ -783,3 +784,7 @@ input.switch:checked::after { transform: translateX(16px); }
 .install-bar.m { left: 12px; right: 12px; width: auto; bottom: calc(76px + env(safe-area-inset-bottom)); }
 .install-bar.m .ib-t span { display: none; }
 @media (prefers-reduced-motion: reduce) { .install-bar { transition: none; } }
+
+/* 管理: owl の知識（RAG）の進み具合 */
+.rag-bar { height: 8px; border-radius: 8px; background: var(--bg-2); overflow: hidden; }
+.rag-bar i { display: block; height: 100%; background: var(--accent); border-radius: 8px; transition: width .4s ease; }

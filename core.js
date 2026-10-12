@@ -127,10 +127,14 @@ function fileIcon(f) {
   return `<span class="file-ico fk-${f.kind}">${esc(f.kind === "other" || f.kind === "text" ? ext || KIND_LABEL[f.kind] : KIND_LABEL[f.kind])}</span>`;
 }
 
+/** 「@all」「@全員」を含むか（チャンネルの全員に通知する宛先）。DB の mentions_all() と同じ判定 */
+const mentionsAll = body => /(^|[^A-Za-z0-9_./@-])@(all(?![A-Za-z0-9_])|全員)/i.test(body || "");
+
 function formatBody(text) {
   let s = esc(text);
   const blocks = [];
   s = s.replace(/```\n?([\s\S]*?)```/g, (_, c) => { blocks.push(`<pre>${c}</pre>`); return `\u0000${blocks.length - 1}\u0000`; });
+  s = s.replace(/(^|[\s(（「『、，。])@(all(?![A-Za-z0-9_])|全員)/gi, (m, pre, w) => `${pre}<span class="mention-tag all">@${w}</span>`);
   s = s.replace(/`([^`\n]+)`/g, "<code>$1</code>");
   s = s.replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>");
   s = s.replace(/(https?:\/\/[^\s<]+[^\s<.,;:!?)\]」』）])/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
@@ -250,7 +254,7 @@ function handleWS(ev) {
       if (ch) {
         ch.last_at = m.created_at; ch.last_body = m.body;
         if (m.user_id !== S.me.id && !viewing) {
-          ch.unread++; if (ch.kind === "dm" || (m.body || "").includes("@" + S.me.name)) ch.mentions++;
+          ch.unread++; if (ch.kind === "dm" || (m.body || "").includes("@" + S.me.name) || (mentionsAll(m.body) && !ch.muted)) ch.mentions++;
         }
       } else reloadChannelsSoon();
       delete S.typing[m.channel_id + ":" + m.user_id];
@@ -335,7 +339,7 @@ function msgHTML(m, prev, ch, memberIds) {
   const cont = prev && prev.user_id === m.user_id && !prev.meta?.kind && !m.reply &&
     (new Date(m.created_at) - new Date(prev.created_at)) < 5 * 60 * 1000 && prev.created_at.slice(0, 10) === m.created_at.slice(0, 10);
   const mine = m.user_id === S.me.id;
-  const mention = !mine && (m.body || "").includes("@" + S.me.name);
+  const mention = !mine && ((m.body || "").includes("@" + S.me.name) || mentionsAll(m.body));
   let body = m.deleted ? `<div class="msg-body deleted">このメッセージは削除されました</div>` :
     (m.body ? `<div class="msg-body">${formatBody(m.body)}${m.edited_at ? ' <span class="small muted">(編集済み)</span>' : ""}</div>` : "");
   if (m.reply) body = `<div class="msg-reply" data-jump="${m.reply.id}">↩ ${esc(U(m.reply.user_id).name)}: ${esc(m.reply.body || "（添付）")}</div>` + body;
@@ -414,7 +418,7 @@ async function renderChat(el, cid) {
       <div class="composer-bar">
         <button class="btn ghost icon sm" data-attach title="ファイルを添付">${icon("clip")}</button>
         <button class="btn ghost icon sm" data-emoji title="絵文字">${icon("smile")}</button>
-        <span class="hint">${UI.isMobile ? "" : "Enter で送信 · Shift+Enter で改行 · @ でメンション"}</span>
+        <span class="hint">${UI.isMobile ? "" : "Enter で送信 · Shift+Enter で改行 · @ でメンション（@all は全員に通知）"}</span>
         <button class="send-btn" data-send aria-label="送信" disabled>${icon("send")}</button>
       </div></div><input type="file" multiple hidden></div>
   </section>`;
@@ -658,9 +662,10 @@ async function renderChat(el, cid) {
     const before = ta.value.slice(0, ta.selectionStart), mm = before.match(/@([^\s@]*)$/);
     if (!mm) { if (_pop && _pop.dataset.mention) closePop(); return; }
     const qq = mm[1].toLowerCase();
-    const cands = Object.values(S.users).filter(u => (u.name + (u.kana || "") + u.login).toLowerCase().includes(qq)).slice(0, 6);
-    if (!cands.length) return closePop();
-    const p = popover(ta, `<div class="menu">${cands.map(u => `<button data-n="${esc(u.name)}">${avatar(u, 22)} ${esc(u.name)} <span class="muted small">${esc(u.title || "")}</span></button>`).join("")}</div>`, {
+    const info = S.channels.find(c => c.id === cid), canAll = !!info && info.kind === "channel" && ("all".startsWith(qq) || "全員".includes(qq));   // 全員宛ては、チャンネルでだけ
+    const cands = Object.values(S.users).filter(u => (u.name + (u.kana || "") + u.login).toLowerCase().includes(qq)).slice(0, canAll ? 5 : 6);
+    if (!cands.length && !canAll) return closePop();
+    const p = popover(ta, `<div class="menu">${canAll ? `<button data-n="all">${icon("bell")} @all <span class="muted small">チャンネルの全員に通知</span></button>` : ""}${cands.map(u => `<button data-n="${esc(u.name)}">${avatar(u, 22)} ${esc(u.name)} <span class="muted small">${esc(u.title || "")}</span></button>`).join("")}</div>`, {
       onMount: p => {
         p.onmousedown = e => e.preventDefault();  // 入力欄のフォーカスを奪わない
         p.onclick = e => {
