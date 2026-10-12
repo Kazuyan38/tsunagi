@@ -96,12 +96,13 @@ new MutationObserver(() => { if (!OWL_SPLASH.gone && !OWL_SPLASH.node.isConnecte
 
 /* ---------- フクロウとのチャット ---------- */
 const OWL_AI = {
-  /** 返事を作る。history: [{ who: "me" | "owl", text }]。中身は Edge Function owl-ai（Cloudflare Workers AI・OpenAI の gpt-oss） */
+  /** 返事を作る。history: [{ who: "me" | "owl", text }]。中身は Edge Function owl-ai（OpenAI の gpt-oss）。
+   *  owl は必要に応じて自分でアプリ内を検索して答える（searched: 調べた先の名前）。会話の履歴には本文だけを送る */
   async reply(history) {
-    const d = await fn("owl-ai", { action: "chat", messages: history.slice(-12) });
-    if (d.configured === false) return "ホー、まだ考える頭（AI）がつながっていないんだ。\n管理者が「管理」画面の「owl の AI」で設定すると、ここで相談に乗れるようになるよ。";
-    if (d.quota) return "今日はたくさん話して、ちょっと疲れちゃった。ホー……\n毎朝 9 時に元気が戻るから、また話しかけてね。";
-    return d.reply;
+    const d = await fn("owl-ai", { action: "chat", messages: history.slice(-12).map(m => ({ who: m.who, text: m.text })) });
+    if (d.configured === false) return { text: "ホー、まだ考える頭（AI）がつながっていないんだ。\n管理者が「管理」画面の「owl の AI」で設定すると、ここで相談に乗れるようになるよ。" };
+    if (d.quota) return { text: "今日はたくさん話して、ちょっと疲れちゃった。ホー……\n毎朝 9 時に元気が戻るから、また話しかけてね。" };
+    return { text: d.reply, searched: Array.isArray(d.searched) ? d.searched : [] };
   },
 };
 const OWL_GREET = "ホー。owl だよ。\n困ったこと・確認したいことがあったら、ここで話しかけてね。";
@@ -118,9 +119,9 @@ function renderOwlChat(el) {
       <button class="btn primary" aria-label="送る">${icon("send")}</button></form>`;
   owlSprite($(".oc-owl", el));
   const list = $(".oc-list", el), scroll = $(".oc-scroll", el), ta = $("textarea", el), form = $(".oc-form", el);
-  const bubble = (who, text) => `<div class="oc-msg ${who}">${who === "owl" ? '<span class="oc-av"></span>' : ""}<div class="oc-b">${esc(text).replace(/\n/g, "<br>")}</div></div>`;
+  const bubble = (who, text, searched) => `<div class="oc-msg ${who}">${who === "owl" ? '<span class="oc-av"></span>' : ""}<div class="oc-b">${esc(text).replace(/\n/g, "<br>")}${searched && searched.length ? `<div class="oc-note">${icon("search")} 調べた先: ${searched.map(esc).join("・")}</div>` : ""}</div></div>`;
   const draw = () => {
-    list.innerHTML = bubble("owl", OWL_GREET) + L.map(m => bubble(m.who, m.text)).join("");
+    list.innerHTML = bubble("owl", OWL_GREET) + L.map(m => bubble(m.who, m.text, m.searched)).join("");
     scroll.scrollTop = scroll.scrollHeight;
   };
   draw();
@@ -132,12 +133,12 @@ function renderOwlChat(el) {
     const text = ta.value.trim(); if (!text || form.dataset.busy) return;
     ta.value = ""; grow(); form.dataset.busy = 1;
     L.push({ who: "me", text }); owlSave(L); draw();
-    list.insertAdjacentHTML("beforeend", `<div class="oc-msg owl typing"><span class="oc-av"></span><div class="oc-b"><i></i><i></i><i></i></div></div>`);
+    list.insertAdjacentHTML("beforeend", `<div class="oc-msg owl typing"><span class="oc-av"></span><div class="oc-b"><i></i><i></i><i></i><span class="oc-wait">調べています…</span></div></div>`);
     scroll.scrollTop = scroll.scrollHeight;
     let ans;
-    try { ans = await OWL_AI.reply(L.slice()); } catch (e) { ans = `ごめんね、いまは返事ができないみたい。
-（${e.message}）`; }
-    L.push({ who: "owl", text: ans }); owlSave(L); delete form.dataset.busy;
+    try { ans = await OWL_AI.reply(L.slice()); } catch (e) { ans = { text: `ごめんね、いまは返事ができないみたい。
+（${e.message}）` }; }
+    L.push({ who: "owl", text: ans.text, searched: ans.searched }); owlSave(L); delete form.dataset.busy;
     if (el.isConnected) { draw(); ta.focus(); }
   };
   if (!UI.isMobile) setTimeout(() => ta.focus(), 60);
