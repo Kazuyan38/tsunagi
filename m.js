@@ -19,6 +19,7 @@ const UI = {
         <button class="claude-pill" data-claude aria-label="Claude を開く">${CLAUDE_MARK}Claude</button></header>
       <main class="m-main" id="main"></main>
       <nav class="m-tabs">${TABS.map(([k, l, i]) => `<button class="m-tab" data-tab="${k}">${icon(i)}<span>${l}</span><span class="badge" hidden></span></button>`).join("")}</nav></div>`;
+    $(".m-head h1").before(owlBuddy(38));   // 見出しの左のフクロウ。押すと owl とのチャット
     document.addEventListener("click", e => {
       const t = e.target.closest(".m-tab[data-tab]"); if (t) return this.go(t.dataset.tab);
       if (e.target.closest("[data-claude]")) return openClaude();

@@ -29,6 +29,7 @@ const UI = {
         <div class="conn" hidden><span class="dot"></span><span>再接続しています…</span></div>
       </aside>
       <main class="main" id="main"></main></div>`;
+    $(".rail .logo").replaceWith(owlBuddy(50));   // 左上のフクロウ。押すと owl とのチャット
     document.addEventListener("click", e => {
       const g = e.target.closest("[data-go]"); if (g) { this.go(g.dataset.go); return; }
       const bell = e.target.closest("[data-bell]"); if (bell) { this.openNotifs(bell); return; }

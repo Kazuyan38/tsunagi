@@ -215,6 +215,7 @@ async function boot() {
   await Promise.all([loadUsers(), loadChannels()]);
   connectWS();
   UI.start();
+  owlSplashDone();
   SB.auth.onAuthStateChange(ev => { if (ev === "SIGNED_OUT") location.reload(); });
 }
 
@@ -286,7 +287,7 @@ async function markRead(cid, mid) {
 function renderLogin(notice) {
   document.body.className = "is-login";
   document.body.innerHTML = `<main class="login"><div class="login-stage">
-    <div class="owl-stage" aria-hidden="true"><div class="owl-shadow"></div><div class="owl" id="owl"></div></div>
+    <div class="owl-stage" aria-hidden="true"><div class="owl-shadow"></div><div class="owl owl-float" id="owl"></div></div>
     <div class="card login-card">
       <h1>owl</h1><p class="muted login-lead">チームの連絡・予定・シフト・共有メールを 1 か所に。</p>
       ${notice ? `<p class="login-notice">${esc(notice)}</p>` : ""}
@@ -322,35 +323,10 @@ function renderLogin(notice) {
       location.reload();
     } catch (err) { fail(err); btn.disabled = false; btn.textContent = mode === "register" ? "登録してはじめる" : "ログイン"; }
   };
-  startOwl($("#owl"));
+  owlSprite($("#owl"));
+  $("#owl").parentElement.onclick = () => owlHop($("#owl"));
+  owlSplashDone();
   f.login.focus();
-}
-
-/** ログイン画面のフクロウ。24 コマの首振りをポインタの位置に追従させる（静止画で始め、読み込めたら差し替え）。 */
-function startOwl(el) {
-  el.style.backgroundImage = "url(img/owl_hero.webp)";
-  el.classList.add("still");
-  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-  const FR = 24, sheet = new Image();
-  sheet.onload = () => {
-    el.classList.remove("still"); el.style.backgroundImage = `url(${sheet.src})`;
-    let target = 0.5, cur = 0.5, last = performance.now(), idle = 0;
-    const set = x => { target = Math.min(1, Math.max(0, x)); idle = 0; };
-    addEventListener("pointermove", e => set(e.clientX / innerWidth));
-    addEventListener("deviceorientation", e => e.gamma != null && set(0.5 + e.gamma / 60));
-    const tick = now => {
-      if (!document.body.contains(el)) return;
-      const dt = Math.min(0.05, (now - last) / 1000); last = now; idle += dt;
-      // 操作が無いときはゆっくり見回す
-      const goal = idle > 3 ? 0.5 + Math.sin(now / 2200) * 0.32 : target;
-      cur += (goal - cur) * Math.min(1, dt * 5);
-      const i = Math.round(cur * (FR - 1));
-      el.style.backgroundPosition = `${(i / (FR - 1)) * 100}% 0`;
-      requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
-  };
-  sheet.src = "img/owl_turn.webp";
 }
 
 /* ---------- チャット ---------- */
@@ -966,4 +942,4 @@ async function loadAvatars(list) {
   for (const u of want) if (byPath[u.avatar_path]) S.avatarUrls[u.id] = byPath[u.avatar_path];
 }
 
-window.addEventListener("DOMContentLoaded", () => boot().catch(e => { document.body.innerHTML = `<div class="empty"><b>起動できませんでした</b>${esc(e.message)}</div>`; }));
+window.addEventListener("DOMContentLoaded", () => boot().catch(e => { owlSplashDone(); document.body.innerHTML = `<div class="empty"><b>起動できませんでした</b>${esc(e.message)}</div>`; }));
