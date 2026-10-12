@@ -13,7 +13,14 @@
 <style>
   body { overflow: hidden; }
   body.is-login { overflow: auto; }
-  .app { display: grid; grid-template-columns: 76px 264px minmax(0, 1fr); height: 100vh; }
+  .app { display: grid; grid-template-columns: 76px 264px minmax(0, 1fr); height: 100vh; transition: grid-template-columns .22s cubic-bezier(.2,.8,.2,1); }
+  /* サイドバーを畳んだ状態: レールだけ残し、本文を広く使う */
+  .app.collapsed { grid-template-columns: 76px 0 minmax(0, 1fr); }
+  .app.collapsed .side { visibility: hidden; border-right: 0; }
+  .side { overflow: hidden; }
+  .rail-toggle { width: 40px; height: 34px; border-radius: 10px; display: grid; place-items: center; color: var(--muted); margin: -4px 0 8px; }
+  .rail-toggle:hover { background: var(--bg-2); color: var(--ink); }
+  .app:not(.collapsed) .rail-toggle { color: var(--accent); background: var(--accent-soft); }
 
   /* 左レール: 8 つの行き先だけ。ラベルを常に出して「アイコンの意味を思い出す」負荷をなくす */
   .rail { background: #fbfbfd; border-right: 1px solid var(--line); display: flex; flex-direction: column; align-items: center; padding: 14px 0 12px; gap: 4px; }
@@ -37,6 +44,7 @@
   .search-btn:hover { border-color: var(--line-2); }
   .search-btn kbd { margin-left: auto; font-family: var(--font); font-size: 11px; background: var(--surface); border: 1px solid var(--line); border-radius: 5px; padding: 0 5px; }
   .side-filter { display: flex; gap: 6px; }
+  .side-filter .chip .ico { width: 14px; height: 14px; }
   .side-scroll { overflow-y: auto; flex: 1; padding: 4px 8px 16px; }
   .side-sec { display: flex; align-items: center; justify-content: space-between; padding: 14px 8px 4px; font-size: 11.5px; font-weight: 700; letter-spacing: .08em; color: var(--muted); }
   .side-sec button { width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center; color: var(--muted); }
@@ -67,7 +75,7 @@
 
   .mail { height: 100vh; }
   @media (max-width: 1180px) { .mail { grid-template-columns: 150px minmax(280px, 340px) minmax(0, 1fr); } .box-btn { font-size: 13px; padding: 7px 8px; } }
-  @media (max-width: 1000px) { .app { grid-template-columns: 76px 220px minmax(0, 1fr); } .home-hero { grid-template-columns: 1fr; } }
+  @media (max-width: 1000px) { .app:not(.collapsed) { grid-template-columns: 76px 220px minmax(0, 1fr); } .home-hero { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>

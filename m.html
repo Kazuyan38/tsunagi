@@ -83,7 +83,8 @@
   .stat-ico .ico { width: 16px; height: 16px; }
   .home-greet { padding: 0; }
   .home-greet h1 { font-size: 21px; }
-  .home-grid { grid-template-columns: 1fr; gap: 12px; }
+  .home-grid { columns: 1; }
+  .home-grid > .home-card { margin-bottom: 12px; }
   .mail.is-mobile { display: block; }
   .mail.is-mobile .mail-boxes { display: flex; gap: 6px; overflow-x: auto; padding: 4px 16px 10px; border: 0; background: transparent; scrollbar-width: none; }
   .mail.is-mobile .mail-boxes .chip { height: 32px; flex: none; }
@@ -124,6 +125,21 @@
   .read-mark { min-height: 32px; display: inline-grid; place-items: center; padding: 0 8px; }
   .react { height: 32px; padding: 0 10px; }
   .chip { height: 32px; }
+  /* 混雑を減らす: スマホでは補助的な要素を隠し、横に並ぶものは 1 行スクロールに */
+  .hide-m { display: none !important; }
+  .shift-legend { display: none !important; }
+  .page-head h1.keep-title { display: block; font-size: 19px; margin: 0 4px 0 0; }
+  .kind-chips, .tt-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-left: -16px; margin-right: -16px; padding: 0 16px 4px; }
+  .kind-chips .chip, .tt-tabs .chip { flex: none; }
+  .tt-add { flex-wrap: wrap; padding: 8px; }
+  .tt-add .input[name=title] { flex: 1 1 0; min-width: 0; }
+  .tt-add .btn.primary { width: 44px; padding: 0; }
+  .tt-add-more { display: none; width: 100%; gap: 8px; }
+  .tt-add:focus-within .tt-add-more { display: flex; }
+  .tt-add-more .input[type=date], .tt-add-more select.input { flex: 1; width: auto; }
+  .home-next { padding: 10px 12px; }
+  .home-calm { margin: 0 0 12px; font-size: 13.5px; }
+  .mr-meta { margin-top: 2px; }
   .task-check { width: 32px; height: 32px; border-radius: 10px; }
   .tt-row { grid-template-columns: 34px minmax(0, 1fr) auto; }
   .login-card input[type=checkbox] { width: 22px; height: 22px; }

@@ -10,18 +10,22 @@ const UI = {
 
   start() {
     document.body.className = "";
-    document.body.innerHTML = `<div class="app">
+    let collapsed = innerWidth < 1100;
+    try { const v = localStorage.getItem("tsunagi_side"); if (v) collapsed = v === "collapsed"; } catch { }
+    document.body.innerHTML = `<div class="app${collapsed ? " collapsed" : ""}">
       <nav class="rail" aria-label="メイン">${LOGO}
+        <button class="rail-toggle" data-sidetoggle title="チャンネル一覧を開く／閉じる（Ctrl+\）" aria-label="チャンネル一覧を開閉">${icon("panel")}</button>
         ${[...NAV, ...(S.me.role === "admin" ? [["admin", "管理", "user"]] : [])].map(([k, l, i]) => `<button class="rail-btn" data-go="${k}" title="${l}">${icon(i)}<span>${l}</span><span class="badge" hidden></span></button>`).join("")}
         <span class="sp"></span>
         <button class="claude-btn" data-claude title="Claude を開く（新しいタブ）">${CLAUDE_MARK}</button><span class="claude-cap">Claude</span>
         <button class="me-btn" data-me title="プロフィール"></button>
       </nav>
       <aside class="side" aria-label="チャンネル">
-        <div class="side-top"><button class="search-btn" data-search>${icon("search")} 移動・検索<kbd>Ctrl K</kbd></button>
-          <div class="side-filter"><button class="chip" data-filter="all">すべて</button><button class="chip" data-filter="unread">未読だけ</button></div></div>
+        <div class="side-top"><div class="row" style="gap:6px"><button class="search-btn grow" data-search>${icon("search")} 移動・検索<kbd>Ctrl K</kbd></button>
+          <button class="btn ghost icon" data-sidetoggle title="閉じる（Ctrl+\）" aria-label="チャンネル一覧を閉じる">${icon("panel")}</button></div>
+          <div class="side-filter"><button class="chip" data-filter="unread" aria-pressed="false">${icon("filter")} 未読だけ表示</button></div></div>
         <div class="side-scroll"></div>
-        <div class="conn"><span class="dot"></span><span>リアルタイム接続中</span></div>
+        <div class="conn" hidden><span class="dot"></span><span>再接続しています…</span></div>
       </aside>
       <main class="main" id="main"></main></div>`;
     document.addEventListener("click", e => {
@@ -29,12 +33,15 @@ const UI = {
       if (e.target.closest("[data-claude]")) openClaude();
       if (e.target.closest("[data-me]")) showProfile(S.me.id);
       if (e.target.closest("[data-search]")) openSwitcher();
-      const f = e.target.closest("[data-filter]"); if (f) { this.filterUnread = f.dataset.filter === "unread"; this.drawSide(); }
+      const f = e.target.closest("[data-filter]"); if (f) { this.filterUnread = !this.filterUnread; this.drawSide(); }
+      if (e.target.closest("[data-sidetoggle]")) this.toggleSide();
       const c = e.target.closest(".side [data-ch]"); if (c) this.openChannel(+c.dataset.ch);
       const a = e.target.closest("[data-side]"); if (a) ({ ch: newChannel, dm: newDM, browse: browseChannels })[a.dataset.side]();
     });
     document.addEventListener("keydown", e => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); openSwitcher(); }
+      // 日本語キーボードでは \ が ¥ キー・ろ キーになるので、物理キーでも受ける
+      if ((e.ctrlKey || e.metaKey) && (e.key === "\\" || e.key === "¥" || ["Backslash", "IntlYen", "IntlRo"].includes(e.code))) { e.preventDefault(); this.toggleSide(); }
       if (e.altKey && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
         e.preventDefault();
         const ids = $$(".side [data-ch]").map(b => +b.dataset.ch); if (!ids.length) return;
@@ -45,7 +52,8 @@ const UI = {
     on("channels", () => this.drawSide());
     on("presence", () => this.drawSide());
     on("users", () => { this.drawMe(); this.drawSide(); });
-    on("ws", ok => { const c = $(".conn"); c.classList.toggle("off", !ok); $("span:last-child", c).textContent = ok ? "リアルタイム接続中" : "再接続しています…"; });
+    // 接続できている間は何も出さない（問題があるときだけ知らせる）
+    on("ws", ok => { const c = $(".conn"); c.hidden = ok; c.classList.toggle("off", !ok); });
     on("mail", () => this.mailBadge()); on("mail_read", () => this.mailBadge());
     window.addEventListener("focus", () => { if (S.cur && this.section === "chat") { const c = S.cache[S.cur]; const m = c && c.messages[c.messages.length - 1]; if (m) markRead(S.cur, m.id); } });
     this.drawMe(); this.drawSide(); this.mailBadge();
@@ -62,9 +70,17 @@ const UI = {
     } catch { }
   },
 
+  toggleSide(force) {
+    const app = $(".app");
+    const collapsed = force ?? !app.classList.contains("collapsed");
+    app.classList.toggle("collapsed", collapsed);
+    try { localStorage.setItem("tsunagi_side", collapsed ? "collapsed" : "open"); } catch { }
+    $$("[data-sidetoggle]").forEach(b => b.setAttribute("aria-expanded", !collapsed));
+  },
+
   drawSide() {
     const el = $(".side-scroll"); if (!el) return;
-    $$("[data-filter]").forEach(b => b.classList.toggle("on", (b.dataset.filter === "unread") === this.filterUnread));
+    $$("[data-filter]").forEach(b => { b.classList.toggle("on", this.filterUnread); b.setAttribute("aria-pressed", this.filterUnread); });
     const vis = c => !this.filterUnread || c.unread || c.id === S.cur;
     const sortName = (a, b) => chName(a).localeCompare(chName(b), "ja");
     const row = c => `<button class="ch${c.id === S.cur && this.section === "chat" ? " on" : ""}${c.unread && !c.muted ? " unread" : ""}" data-ch="${c.id}">${chIcon(c)}<span class="nm">${esc(chName(c))}</span>

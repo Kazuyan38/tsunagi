@@ -24,7 +24,7 @@ async function renderHome(el) {
     <header class="home-hero">
       <div class="home-greet"><div class="muted small">${d.getMonth() + 1}月${d.getDate()}日（${WD[d.getDay()]}）</div>
         <h1>${greet()}、${esc(S.me.name.split(/\s/).pop())}さん</h1>
-        <p class="home-summary muted">読み込み中…</p></div>
+        <button class="home-next" data-next hidden></button></div>
       <nav class="home-stats" aria-label="今日の数字">
         <button class="stat" data-goto="chat" data-stat="unread"><span class="stat-ico">${icon("chat")}</span><span class="stat-n">–</span><span class="stat-l"><span class="l-long">未読メッセージ</span><span class="l-short">未読</span></span></button>
         <button class="stat" data-goto="mail" data-stat="mail"><span class="stat-ico">${icon("mail")}</span><span class="stat-n">–</span><span class="stat-l"><span class="l-long">対応メール</span><span class="l-short">メール</span></span></button>
@@ -32,6 +32,7 @@ async function renderHome(el) {
         <button class="stat" data-goto="tasks" data-stat="tasks"><span class="stat-ico">${icon("task")}</span><span class="stat-n">–</span><span class="stat-l"><span class="l-long">担当タスク</span><span class="l-short">タスク</span></span></button>
       </nav>
     </header>
+    <p class="home-calm" hidden></p>
     <div class="home-grid">
       <section class="card home-card" data-k="attention"><h2 class="section-title">${icon("chat")} 未読のメッセージ</h2><div class="hc-body"></div></section>
       <section class="card home-card" data-k="mail"><h2 class="section-title">${icon("mail")} 対応が必要なメール</h2><div class="hc-body"></div></section>
@@ -47,37 +48,73 @@ async function renderHome(el) {
     b.className = `stat${n ? " has" : ""}${tone ? " " + tone : ""}`;
     b.title = tip;
   };
+  const LIMIT = UI.isMobile ? 3 : 5;
+  const more = (n, goto) => n > LIMIT ? `<button class="more-link" data-goto="${goto}">すべて見る（${n} 件）</button>` : "";
+  // 空のカードは隠して 1 行にまとめる（「何も無い」を 5 枚のカードで見せない）
+  const empties = new Set();
+  const calm = () => {
+    const names = { attention: "未読", mail: "対応メール", events: "今日の予定", shift: "今日のシフト", tasks: "担当タスク" };
+    const list = ["attention", "mail", "events", "tasks", "shift"].filter(k => empties.has(k)).map(k => names[k]);
+    const p = $(".home-calm", el); if (!p) return;
+    p.hidden = !list.length;
+    p.innerHTML = `${icon("check")} ${list.join("・")}はありません`;
+  };
+  const setCard = (k, html, isEmpty) => {
+    const sec = $(`[data-k="${k}"]`, el); if (!sec) return;
+    sec.hidden = isEmpty; isEmpty ? empties.add(k) : empties.delete(k);
+    if (!isEmpty) $(".hc-body", sec).innerHTML = html;
+    calm();
+  };
+  // いちばん先にやることを 1 つだけ示す（優先: 期日超過 > メンション > 担当メール > 未読 DM > 次の予定）
+  const next = { task: null, rest: null };
+  const showNext = () => {
+    const b = $("[data-next]", el); if (!b) return;
+    const n = next.task || next.rest;
+    b.hidden = !n;
+    if (n) { b.innerHTML = `<span class="next-k">まずこれ</span><span class="next-t">${n.html}</span>${icon("chev")}`; b.onclick = n.go; }
+  };
   const load = async () => {
     const h = await api("/api/home");
     if (!document.body.contains(el.firstElementChild)) return;
-    const box = k => $(`[data-k="${k}"] .hc-body`, el);
     const att = h.attention;
-    box("attention").innerHTML = att.length ? `<div class="list">${att.map(c => `<button class="li" data-ch="${c.id}">${chIcon(c, 28)}
+    setCard("attention", `<div class="list">${att.slice(0, LIMIT).map(c => `<button class="li" data-ch="${c.id}">${chIcon(c, 28)}
       <span class="grow" style="min-width:0"><div class="li-title ellipsis">${esc(chName(c))}</div><div class="li-sub">${esc(c.last_body || "")}</div></span>
-      ${c.mentions ? `<span class="badge alert" title="あなた宛て">@${c.mentions}</span>` : ""}<span class="badge">${c.unread}</span></button>`).join("")}</div>`
-      : `<div class="done-state">${icon("check")} すべて読みました</div>`;
-    box("mail").innerHTML = h.mail.length ? `<div class="list">${h.mail.map(m => mailRow(m, true)).join("")}</div>` : `<div class="done-state">${icon("check")} 対応待ちはありません</div>`;
-    box("events").innerHTML = h.events.length ? h.events.map(e => `<button class="ev-row" data-ev="${e.id}"><span class="tm">${e.all_day ? "終日" : fmtTime(e.start)}</span><span class="bar" style="background:${esc(e.color || "var(--accent)")}"></span>
-      <span class="grow"><b>${esc(e.title)}</b><div class="small muted">${esc(e.location || "")}${e.all_day ? "" : ` · 〜${fmtTime(e.end)}`}</div></span></button>`).join("") : `<div class="done-state">${icon("check")} 予定はありません</div>`;
+      ${c.mentions ? `<span class="badge alert" title="あなた宛て">@${c.mentions}</span>` : ""}<span class="badge">${c.unread}</span></button>`).join("")}</div>${more(att.length, "chat")}`, !att.length);
+    setCard("mail", `<div class="list">${h.mail.slice(0, LIMIT).map(m => mailRow(m, true)).join("")}</div>${more(h.mail.length, "mail")}`, !h.mail.length);
+    setCard("events", h.events.map(e => `<button class="ev-row" data-ev="${e.id}"><span class="tm">${e.all_day ? "終日" : fmtTime(e.start)}</span><span class="bar" style="background:${esc(e.color || "var(--accent)")}"></span>
+      <span class="grow"><b>${esc(e.title)}</b><div class="small muted">${esc(e.location || "")}${e.all_day ? "" : ` · 〜${fmtTime(e.end)}`}</div></span></button>`).join(""), !h.events.length);
     const kinds = S.cfg.shift_kinds;
     const mine = h.my_shift ? kinds[h.my_shift] : null;
-    box("shift").innerHTML = `<div class="row" style="margin-bottom:10px"><span class="small muted">あなた</span>${mine ? `<span class="chip" style="background:${mine.color}22;color:${mine.color}">${mine.label} ${mine.time}</span>` : `<span class="chip">未設定</span>`}</div>
-      ${h.working.length ? `<div class="row wrap" style="gap:6px">${h.working.map(w => `<span class="chip" title="${esc(kinds[w.kind]?.label)}">${avatar(U(w.user_id), 18, false)} ${esc(U(w.user_id).name.split(/\s/)[0])} <span style="color:${kinds[w.kind]?.color}">${esc(kinds[w.kind]?.label || "")}</span></span>`).join("")}</div>` : `<div class="muted small">出勤予定のメンバーはいません</div>`}`;
+    setCard("shift", `<div class="row" style="margin-bottom:10px"><span class="small muted">あなた</span>${mine ? `<span class="chip" style="background:${mine.color}22;color:${mine.color}">${mine.label} ${mine.time}</span>` : `<span class="chip">未設定</span>`}</div>
+      ${h.working.length ? `<div class="row wrap" style="gap:6px">${h.working.map(w => `<span class="chip" title="${esc(kinds[w.kind]?.label)}">${avatar(U(w.user_id), 18, false)} ${esc(shortName(U(w.user_id)))} <span style="color:${kinds[w.kind]?.color}">${esc(kinds[w.kind]?.label || "")}</span></span>`).join("")}</div>` : `<div class="muted small">出勤予定のメンバーはいません</div>`}`, !mine && !h.working.length);
     const unreadTotal = att.reduce((a, c) => a + c.unread, 0);
     const parts = [unreadTotal ? `未読 ${unreadTotal} 件` : "", h.mail.length ? `メール ${h.mail.length} 件` : "", h.events.length ? `予定 ${h.events.length} 件` : ""].filter(Boolean);
     setStat("unread", unreadTotal, att.some(c => c.mentions) ? "alert" : "");
     setStat("mail", h.mail.length);
     setStat("events", h.events.length);
-    $(".home-summary", el).textContent = parts.length ? `今日は ${parts.join("・")}。上から順に片付ければ大丈夫です。` : "いま対応が必要なことはありません。";
+    void parts;
+    const mention = att.find(c => c.mentions);
+    const myMail = h.mail.find(m => m.assignee_id === S.me.id);
+    const dm = att.find(c => c.kind === "dm");
+    const nowT = fmtTime(localISO(new Date().toISOString()));
+    const upcoming = h.events.find(e => e.all_day || fmtTime(e.start) >= nowT);
+    next.rest = mention ? { html: `${esc(chName(mention))} であなた宛ての連絡が ${mention.mentions} 件`, go: () => UI.openChannel(mention.id) }
+      : myMail ? { html: `担当のメール「${esc(myMail.subject)}」`, go: () => UI.openMail(myMail.id) }
+      : dm ? { html: `${esc(chName(dm))} から未読 ${dm.unread} 件`, go: () => UI.openChannel(dm.id) }
+      : upcoming ? { html: `${upcoming.all_day ? "今日" : fmtTime(upcoming.start)} ${esc(upcoming.title)}`, go: () => UI.goto("calendar") } : null;
+    showNext();
   };
   const loadTasks = async () => {
-    const b = $('[data-k="tasks"] .hc-body', el); if (!b) return;
+    if (!$('[data-k="tasks"]', el)) return;
     const rows = (await SB.from("team_tasks").select("*").eq("assignee_id", S.me.id).in("status", ["todo", "doing", "waiting"]).order("due", { nullsFirst: false }).limit(30)).data || [];
     rows.sort(byDue);
     const over = rows.filter(t => t.due && t.due < todayStr()).length;
     setStat("tasks", rows.length, over ? "alert" : "", over ? `うち ${over} 件が期日超過` : "");
-    b.innerHTML = rows.length ? `<div class="list">${rows.slice(0, 6).map(t => `<button class="li" data-tt="${t.id}"><span class="grow" style="min-width:0"><div class="ellipsis">${esc(t.title)}</div><div class="tt-meta">${dueLabel(t.due)}<span class="status-pill st-${t.status}">${TASK_STATUS[t.status]}</span></div></span></button>`).join("")}</div>`
-      : `<div class="done-state">${icon("check")} あなたの担当タスクはありません</div>`;
+    setCard("tasks", `<div class="list">${rows.slice(0, LIMIT).map(t => `<button class="li" data-tt="${t.id}"><span class="grow" style="min-width:0"><div class="ellipsis">${esc(t.title)}</div><div class="tt-meta">${dueLabel(t.due)}<span class="status-pill st-${t.status}">${TASK_STATUS[t.status]}</span></div></span></button>`).join("")}</div>`
+      + more(rows.length, "tasks"), !rows.length);
+    const od = rows.find(t => t.due && t.due < todayStr());
+    next.task = od ? { html: `期日を過ぎたタスク「${esc(od.title)}」`, go: () => openTeamTask(od.id) } : null;
+    showNext();
   };
   el.onclick = e => {
     const c = e.target.closest("[data-ch]"); if (c) return UI.openChannel(+c.dataset.ch);
@@ -97,8 +134,9 @@ const MAIL_BOXES = [["inbox", "受信（未完了）"], ["mine", "自分の担�
 const MAIL_STATUS = { open: "未対応", doing: "対応中", done: "完了" };
 
 function seenBy(readers, max = 4) {
-  if (!readers || !readers.length) return `<span class="seen-by">まだ誰も見ていません</span>`;
-  return `<span class="seen-by" title="${esc(readers.map(r => `${U(r.user_id).name}（${fmtRel(r.at)}）`).join("\n"))}"><span class="avatars">${readers.slice(0, max).map(r => avatar(U(r.user_id), 20, false)).join("")}</span>${readers.length > max ? `+${readers.length - max}` : ""} が確認</span>`;
+  // 一覧では顔だけ並べる（誰が・いつ は詳細画面とツールチップに任せる）
+  if (!readers || !readers.length) return `<span class="seen-by seen-none" title="まだ誰も見ていません">未確認</span>`;
+  return `<span class="seen-by" title="確認した人: ${esc(readers.map(r => `${U(r.user_id).name}（${fmtRel(r.at)}）`).join("、"))}"><span class="avatars">${readers.slice(0, max).map(r => avatar(U(r.user_id), 18, false)).join("")}</span>${readers.length > max ? `+${readers.length - max}` : ""}</span>`;
 }
 function mailRow(m, compact) {
   const readMe = (m.readers || []).some(r => r.user_id === S.me.id);
@@ -108,10 +146,10 @@ function mailRow(m, compact) {
     <span class="grow" style="min-width:0">
       <div class="row" style="gap:6px">${readMe ? "" : '<span class="dot" title="あなたは未読"></span>'}<span class="li-title ellipsis grow">${esc(who)}</span><span class="small muted" style="flex:none">${fmtRel(m.date)}</span></div>
       <div class="ellipsis" style="font-size:14px">${esc(m.subject)}</div>
-      ${compact ? "" : `<div class="li-sub">${esc((m.snippet || "").replace(/\s+/g, " "))}</div>`}
-      <div class="row" style="gap:8px;margin-top:4px">${m.direction === "in" ? `<span class="status-pill st-${m.status}">${MAIL_STATUS[m.status]}</span>` : ""}
-        ${m.assignee_id ? `<span class="small muted row" style="gap:4px">${avatar(U(m.assignee_id), 18, false)}担当</span>` : ""}
-        ${m.n_files ? `<span class="small muted">${icon("clip")}${m.n_files}</span>` : ""}
+      ${compact || UI.isMobile ? "" : `<div class="li-sub">${esc((m.snippet || "").replace(/\s+/g, " "))}</div>`}
+      <div class="mr-meta">${m.direction === "in" && m.status !== "open" ? `<span class="status-pill st-${m.status}">${MAIL_STATUS[m.status]}</span>` : ""}
+        ${m.assignee_id ? `<span class="mr-who">${avatar(U(m.assignee_id), 18, false)}${esc(shortName(U(m.assignee_id)))}</span>` : ""}
+        ${m.n_files ? `<span class="mr-clip">${icon("clip")}${m.n_files}</span>` : ""}
         <span class="grow"></span>${seenBy(m.readers, 3)}</div>
     </span></button>`;
 }
@@ -122,7 +160,7 @@ async function renderMail(el, { mobile = false } = {}) {
     <aside class="mail-boxes"></aside>
     <section class="mail-list"><div class="mail-tools">
         <input class="input" type="search" placeholder="メールを検索" value="${esc(mailState.q)}">
-        <button class="btn icon" data-sync title="Gmail と同期">${icon("sync")}</button>
+        ${mobile ? "" : `<button class="btn icon" data-sync title="Gmail と同期">${icon("sync")}</button>`}
         <button class="btn primary" data-compose>${icon("edit")}${mobile ? "" : " 作成"}</button></div>
       <div class="mail-status small muted"></div><div class="list mail-items"></div></section>
     ${mobile ? "" : `<section class="mail-detail"><div class="empty"><b>メールを選んでください</b>誰が確認したかは各メールの右下に出ます</div></section>`}
@@ -130,8 +168,16 @@ async function renderMail(el, { mobile = false } = {}) {
   const boxes = $(".mail-boxes", el), items = $(".mail-items", el);
   const load = async () => {
     const d = await api(`/api/mail?box=${mailState.box}&q=${encodeURIComponent(mailState.q)}`);
-    boxes.innerHTML = MAIL_BOXES.map(([k, l]) => `<button class="${mobile ? "chip" : "box-btn"}${k === mailState.box ? (mobile ? " on" : " sel") : ""}" data-box="${k}"><span class="grow">${l}</span>${d.counts[k] ? `<span class="badge soft">${d.counts[k]}</span>` : ""}</button>`).join("");
+    const PRIMARY = ["inbox", "mine", "unassigned"];
+    if (mobile) {
+      // スマホはよく使う 3 つだけチップにし、残りは「その他」にしまう
+      const other = MAIL_BOXES.find(([k]) => k === mailState.box && !PRIMARY.includes(k));
+      boxes.innerHTML = MAIL_BOXES.filter(([k]) => PRIMARY.includes(k)).map(([k, l]) => `<button class="chip${k === mailState.box ? " on" : ""}" data-box="${k}">${l.replace("（未完了）", "")}${d.counts[k] ? ` <span class="badge soft">${d.counts[k]}</span>` : ""}</button>`).join("")
+        + `<button class="chip${other ? " on" : ""}" data-boxmore>${other ? esc(other[1]) : "その他"} ▾</button>`;
+    } else boxes.innerHTML = MAIL_BOXES.map(([k, l]) => `<button class="${mobile ? "chip" : "box-btn"}${k === mailState.box ? (mobile ? " on" : " sel") : ""}" data-box="${k}"><span class="grow">${l}</span>${d.counts[k] ? `<span class="badge soft">${d.counts[k]}</span>` : ""}</button>`).join("");
     const st = d.status;
+    // 正常に同期できているときのスマホでは出さない（未設定・エラーのときだけ知らせる）
+    $(".mail-status", el).hidden = mobile && st.configured && st.mode !== "gmail-error";
     $(".mail-status", el).innerHTML = st.configured
       ? `${icon("mail")} ${esc(st.address)} · ${st.mode === "gmail-error" ? `<span style="color:var(--danger)">同期エラー: ${esc(st.error)}</span>` : `Gmail 同期 ${st.last_sync ? fmtRel(st.last_sync) : "待機中"}`}`
       : `${icon("info")} 共有 Gmail はまだ設定されていません${S.me.role === "admin" ? "（管理 → 共有 Gmail から設定できます）" : "（管理者が設定します）"}`;
@@ -148,9 +194,14 @@ async function renderMail(el, { mobile = false } = {}) {
       right: m.assignee_id === S.me.id ? null : { label: "自分が担当", icon: "user", tone: "accent", run: () => setMailStatus(m.id, { assignee_id: S.me.id, status: "doing" }, "担当になりました") },
     };
   });
-  boxes.onclick = e => { const b = e.target.closest("[data-box]"); if (b) { mailState.box = b.dataset.box; load(); } };
+  boxes.onclick = e => {
+    const b = e.target.closest("[data-box]"); if (b) { mailState.box = b.dataset.box; return load(); }
+    const mo = e.target.closest("[data-boxmore]");
+    if (mo) popover(mo, `<div class="menu">${MAIL_BOXES.slice(3).map(([k, l]) => `<button data-k="${k}">${l}</button>`).join("")}</div>`,
+      { onMount: p => p.onclick = ev => { const x = ev.target.closest("[data-k]"); if (x) { closePop(); mailState.box = x.dataset.k; load(); } } });
+  };
   let qt; $("input", el).oninput = e => { clearTimeout(qt); qt = setTimeout(() => { mailState.q = e.target.value.trim(); load(); }, 250); };
-  $("[data-sync]", el).onclick = async e => { e.currentTarget.disabled = true; try { const r = await api("/api/mail/sync", { method: "POST" }); toast(r.mode === "none" ? "共有 Gmail が未設定です" : `同期しました（新着 ${r.added} 件）`); load(); } catch (er) { fail(er); } finally { e.currentTarget.disabled = false; } };
+  if (!mobile) $("[data-sync]", el).onclick = async e => { e.currentTarget.disabled = true; try { const r = await api("/api/mail/sync", { method: "POST" }); toast(r.mode === "none" ? "共有 Gmail が未設定です" : `同期しました（新着 ${r.added} 件）`); load(); } catch (er) { fail(er); } finally { e.currentTarget.disabled = false; } };
   $("[data-compose]", el).onclick = () => composeMail({});
   items.onclick = e => { const b = e.target.closest("[data-mail]"); if (!b) return; mailState.sel = +b.dataset.mail; $$(".li.sel", items).forEach(x => x.classList.remove("sel")); b.classList.add("sel"); b.classList.remove("unread"); mobile ? UI.openMail(mailState.sel) : renderMailDetail($(".mail-detail", el), mailState.sel); };
   if (S.cfg.mail.configured) fn("mail", { action: "sync" }).catch(() => { });
@@ -240,7 +291,7 @@ async function renderCalendar(el, { mobile = false } = {}) {
   const agendaEnd = new Date(); agendaEnd.setDate(agendaEnd.getDate() + 45);
   const evs = await api(`/api/events?start=${ymd(view === "month" ? start : new Date())}&end=${ymd(view === "month" ? end : agendaEnd)}`);
   el.innerHTML = `<div class="page">
-    <header class="page-head"><h1>${view === "month" ? `${base.getFullYear()}年${base.getMonth() + 1}月` : "これからの予定"}</h1>
+    <header class="page-head"><h1 class="keep-title">${view === "month" ? `${base.getFullYear()}年${base.getMonth() + 1}月` : "これからの予定"}</h1>
       ${view === "month" ? `<button class="btn icon" data-prev aria-label="前の月">${icon("chevl")}</button><button class="btn sm" data-today>今日</button><button class="btn icon" data-next aria-label="次の月">${icon("chev")}</button>` : ""}
       <span class="grow"></span>
       <div class="seg"><button class="${view === "month" ? "on" : ""}" data-view="month">月</button><button class="${view === "agenda" ? "on" : ""}" data-view="agenda">一覧</button></div>
@@ -330,7 +381,7 @@ async function renderShifts(el, { mobile = false } = {}) {
   const head = `<header class="page-head"><h1>シフト</h1>
     <button class="btn icon" data-pw aria-label="前の週">${icon("chevl")}</button><button class="btn sm" data-tw>今週</button><button class="btn icon" data-nw aria-label="次の週">${icon("chev")}</button>
     <span class="small muted">${fmtDay(ymd(days[0]))} 〜 ${fmtDay(ymd(days[6]))}</span><span class="grow"></span>
-    <div class="row wrap small" style="gap:6px">${Object.values(K).map(k => `<span class="chip" style="background:${k.color}1f;color:${k.color}">${k.label}${k.time ? " " + k.time : ""}</span>`).join("")}</div></header>`;
+    <div class="row wrap small shift-legend" style="gap:6px">${Object.values(K).map(k => `<span class="chip" style="background:${k.color}1f;color:${k.color}">${k.label}${k.time ? " " + k.time : ""}</span>`).join("")}</div></header>`;
   if (!mobile) {
     el.innerHTML = `<div class="page">${head}<div style="overflow-x:auto"><table class="shift-grid"><thead><tr><th style="text-align:left;padding-left:12px">メンバー</th>
       ${days.map(d => `<th class="${ymd(d) === t ? "today" : ""}">${d.getMonth() + 1}/${d.getDate()}<br>${WD[d.getDay()]}</th>`).join("")}</tr></thead><tbody>
@@ -382,7 +433,7 @@ async function renderPeople(el) {
   el.innerHTML = `<div class="page"><header class="page-head"><h1>連絡先</h1>
     <div class="seg"><button data-tab="team" class="${peopleState.tab === "team" ? "on" : ""}">チーム</button><button data-tab="ext" class="${peopleState.tab === "ext" ? "on" : ""}">社外</button></div>
     <span class="grow"></span><input class="input" type="search" placeholder="名前・会社・タグで検索" value="${esc(peopleState.q)}" style="max-width:260px">
-    ${peopleState.tab === "ext" ? `<button class="btn primary" data-add>${icon("plus")} 追加</button>` : `<button class="btn" data-me>${icon("edit")} 自分のプロフィール</button>`}</header>
+    ${peopleState.tab === "ext" ? `<button class="btn primary" data-add>${icon("plus")} 追加</button>` : `<button class="btn hide-m" data-me>${icon("edit")} 自分のプロフィール</button>`}</header>
     <div class="people-body"></div></div>`;
   const body = $(".people-body", el);
   const draw = async () => {
@@ -444,8 +495,8 @@ async function renderFiles(el, { mobile = false } = {}) {
   el.innerHTML = `<div class="page files-page"><header class="page-head"><h1>ファイル</h1><span class="grow"></span>
     <input class="input" type="search" placeholder="ファイル名で検索" value="${esc(filesState.q)}" style="max-width:240px">
     <button class="btn primary" data-up>${icon("plus")} アップロード</button><input type="file" multiple hidden></header>
-    <div class="row wrap" style="gap:6px;margin-bottom:14px">${kinds.map(([k, l]) => `<button class="chip${filesState.kind === k ? " on" : ""}" data-k="${k}">${l}</button>`).join("")}</div>
-    <div class="drop-hint">${mobile ? "" : "ここにファイルをドロップすると全員で共有できます · "}画像・PDF・Word・Excel・PowerPoint・CSV・テキスト・動画・音声はその場でプレビューできます</div>
+    <div class="kind-chips">${kinds.map(([k, l]) => `<button class="chip${filesState.kind === k ? " on" : ""}" data-k="${k}">${l}</button>`).join("")}</div>
+    <div class="drop-hint hide-m">${mobile ? "" : "ここにファイルをドロップすると全員で共有できます · "}画像・PDF・Word・Excel・PowerPoint・CSV・テキスト・動画・音声はその場でプレビューできます</div>
     <div class="file-grid"></div></div>`;
   const grid = $(".file-grid", el);
   const draw = async () => {
@@ -503,7 +554,7 @@ const byDue = (a, b) => (a.due || "9999-12-31").localeCompare(b.due || "9999-12-
 const tasksState = { view: "team", tab: "all", showDone: false };
 async function renderTasks(el, opts = {}) {
   el.innerHTML = `<div class="page"><header class="page-head"><h1>タスク</h1>
-    <div class="seg"><button data-view="team" class="${tasksState.view === "team" ? "on" : ""}">チーム</button><button data-view="me" class="${tasksState.view === "me" ? "on" : ""}">自分（タスクバスター）</button></div>
+    <div class="seg"><button data-view="team" class="${tasksState.view === "team" ? "on" : ""}">チーム</button><button data-view="me" class="${tasksState.view === "me" ? "on" : ""}">自分<span class="hide-m">（タスクバスター）</span></button></div>
     <span class="grow"></span><span class="head-right row"></span></header><div class="tasks-body"></div></div>`;
   $$("[data-view]", el).forEach(b => b.onclick = () => { tasksState.view = b.dataset.view; renderTasks(el, opts); });
   const body = $(".tasks-body", el);
@@ -511,8 +562,7 @@ async function renderTasks(el, opts = {}) {
 }
 
 async function renderTeamTasks(el, right) {
-  right.innerHTML = `<label class="row small muted" style="gap:6px"><input type="checkbox" data-done ${tasksState.showDone ? "checked" : ""}> 完了も表示</label>`;
-  $("[data-done]", right).onchange = e => { tasksState.showDone = e.target.checked; draw(); };
+  right.innerHTML = "";
   const members = () => Object.values(S.users).filter(u => u.active);
   let rows = [];
   const draw = async () => {
@@ -523,15 +573,17 @@ async function renderTeamTasks(el, right) {
     const tab = tasksState.tab;
     const count = uid => open.filter(t => uid === "none" ? !t.assignee_id : t.assignee_id === uid).length;
     const tabs = [["all", `全体 <span class="badge soft">${open.length}</span>`],
-      ...members().map(u => [u.id, `${avatar(u, 20, false)} ${esc(u.name.split(/\s/)[0])} <span class="badge soft">${count(u.id)}</span>`]),
+      ...members().map(u => [u.id, `${avatar(u, 20, false)} ${esc(shortName(u))} <span class="badge soft">${count(u.id)}</span>`]),
       ["none", `担当未定 <span class="badge soft">${count("none")}</span>`]];
     const list = rows.filter(t => tab === "all" || (tab === "none" ? !t.assignee_id : t.assignee_id === tab)).sort(byDue);
     const showWho = tab === "all";
-    el.innerHTML = `<div class="tt-tabs" role="tablist">${tabs.map(([k, l]) => `<button class="chip${k === tab ? " on" : ""}" data-tab="${k}" role="tab">${l}</button>`).join("")}</div>
+    el.innerHTML = `<div class="tt-tabs" role="tablist">${tabs.map(([k, l]) => `<button class="chip${k === tab ? " on" : ""}" data-tab="${k}" role="tab">${l}</button>`).join("")}
+        <button class="chip chip-toggle${tasksState.showDone ? " on" : ""}" data-showdone aria-pressed="${tasksState.showDone}">${icon("check")} 完了も表示</button></div>
       <form class="tt-add card"><input class="input" name="title" placeholder="${tab !== "all" && tab !== "none" ? esc(U(tab).name) + " さんに頼むこと" : "チームでやること"}（Enter で追加）" required>
-        <input class="input" type="date" name="due" style="width:150px" aria-label="期日">
-        <select class="input" name="assignee" style="width:150px" aria-label="担当"><option value="">担当未定</option>${members().map(u => `<option value="${u.id}"${u.id === tab ? " selected" : ""}>${esc(u.name)}</option>`).join("")}</select>
-        <button class="btn primary">${icon("plus")} 追加</button></form>
+        <span class="tt-add-more"><input class="input" type="date" name="due" aria-label="期日">
+        <select class="input" name="assignee" aria-label="担当"><option value="">担当未定</option>${members().map(u => `<option value="${u.id}"${u.id === tab ? " selected" : ""}>${esc(u.name)}</option>`).join("")}</select>
+</span>
+        <button class="btn primary" aria-label="追加">${icon("plus")}<span class="hide-m"> 追加</span></button></form>
       ${list.length ? `<div class="card" style="overflow:hidden">${list.map(t => {
         const who = t.assignee_id ? U(t.assignee_id) : null; const done = t.status === "done";
         return `<div class="tt-row${done ? " done" : ""}" data-t="${t.id}" role="button" tabindex="0">
@@ -549,6 +601,7 @@ async function renderTeamTasks(el, right) {
   el.onclick = async e => {
     const tg = e.target;
     const tb = tg.closest("[data-tab]"); if (tb) { tasksState.tab = tb.dataset.tab; return draw(); }
+    if (tg.closest("[data-showdone]")) { tasksState.showDone = !tasksState.showDone; return draw(); }
     const ck = tg.closest("[data-check]");
     if (ck) {
       e.stopPropagation();

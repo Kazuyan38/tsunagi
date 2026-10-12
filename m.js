@@ -87,7 +87,7 @@ const UI = {
     if (S.screenOff) { S.screenOff(); S.screenOff = null; }
     this.tab = tab; try { sessionStorage.setItem("tsunagi_tab", tab); } catch { }
     $$(".m-tab").forEach(b => b.classList.toggle("on", b.dataset.tab === tab));
-    $(".m-head h1").textContent = TITLES[tab];
+    $(".m-head h1").textContent = tab === "home" ? S.cfg.team : TITLES[tab];   // ホームは下のあいさつと重ねない
     const main = $("#main"); main.scrollTop = 0; main.onclick = null; main.innerHTML = "";
     $(".fab")?.remove();
     if (tab === "home") renderHome(main);

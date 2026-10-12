@@ -42,6 +42,8 @@ const P = {
   chev: '<path d="m9 6 6 6-6 6"/>',
   chevl: '<path d="m15 6-6 6 6 6"/>',
   check: '<path d="m5 12 5 5 9-10"/>',
+  panel: '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/>',
+  filter: '<path d="M4 6h16M7 12h10M10 18h4"/>',
   bell: '<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/>',
 };
 const icon = (name, cls = "ico") => `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[name] || ""}</svg>`;
@@ -88,6 +90,12 @@ const fmtSize = n => n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(0
 
 const U = id => S.users[id] || { id, name: "（退出したメンバー）", color: "#94a3b8" };
 const initial = name => (name || "?").trim().slice(0, 1);
+/** 姓だけで呼ぶ。同じ姓のメンバーがいるときはフルネームにして取り違えを防ぐ。 */
+function shortName(u) {
+  const head = (u.name || "").split(/\s/)[0];
+  const dup = Object.values(S.users).some(x => x.id !== u.id && (x.name || "").split(/\s/)[0] === head);
+  return dup ? u.name : head;
+}
 function avatar(u, size = 36, showOnline = true) {
   if (!u) return "";
   const on = showOnline && S.online.has(u.id) ? " online" : "";
