@@ -7,7 +7,8 @@ const OWL_SPLASH_MIN = 2800;   // 起動画面を最低これだけ見せる（m
 const OWL_FRAMES = 24;
 const owlReduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-/** 首振りスプライトを el に描く。ポインタ（スマホは傾き）を目で追い、何もしないときはゆっくり見回す。 */
+/** 首振りスプライトを el に描く。ポインタ（スマホは傾き）を目で追い、何もしないときはゆっくり見回す。
+ *  24 コマの隣り合う 2 枚を重ねて濃さを混ぜるので、首の動きがコマ送りにならない。 */
 function owlSprite(el, { follow = true } = {}) {
   el.classList.add("owl-sprite", "still");
   el.style.backgroundImage = "url(img/owl_hero.webp)";
@@ -15,7 +16,10 @@ function owlSprite(el, { follow = true } = {}) {
   const sheet = new Image();
   sheet.onload = () => {
     el.classList.remove("still"); el.style.backgroundImage = `url(${sheet.src})`;
-    let target = 0.5, cur = 0.5, last = performance.now(), idle = 9;
+    const over = document.createElement("i");   // 次のコマを上に重ねる層
+    over.className = "owl-sprite osp"; over.style.backgroundImage = `url(${sheet.src})`; over.setAttribute("aria-hidden", "true");
+    el.appendChild(over);
+    let target = 0.5, cur = 0.5, last = performance.now(), idle = 9, shown = -1;
     const set = x => { target = Math.min(1, Math.max(0, x)); idle = 0; };
     if (follow) {
       addEventListener("pointermove", e => {
@@ -30,7 +34,12 @@ function owlSprite(el, { follow = true } = {}) {
       const dt = Math.min(0.05, (now - last) / 1000); last = now; idle += dt;
       const goal = idle > 3 ? 0.5 + Math.sin((now + seed) / 2300) * 0.34 : target;
       cur += (goal - cur) * Math.min(1, dt * 5);
-      el.style.backgroundPosition = `${(Math.round(cur * (OWL_FRAMES - 1)) / (OWL_FRAMES - 1)) * 100}% 0`;
+      if (Math.abs(cur - shown) > 0.0015) {   // 動いていないときは描き直さない
+        shown = cur;
+        const p = cur * (OWL_FRAMES - 1), i = Math.min(OWL_FRAMES - 2, Math.floor(p)), f = p - i;
+        el.style.backgroundPosition = `${(i / (OWL_FRAMES - 1)) * 100}% 0`;
+        over.style.backgroundPosition = `${((i + 1) / (OWL_FRAMES - 1)) * 100}% 0`; over.style.opacity = f.toFixed(3);
+      }
       requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
@@ -44,15 +53,35 @@ function owlHop(el) {
   el.addEventListener("animationend", () => el.classList.remove("hop"), { once: true });   // 跳ね終わったら浮遊に戻す
 }
 
+/* ---------- アプリとしてインストール（デスクトップ・ホーム画面に追加） ---------- */
+const OWL_INSTALL = { evt: null };
+addEventListener("beforeinstallprompt", e => { e.preventDefault(); OWL_INSTALL.evt = e; });
+addEventListener("appinstalled", () => { OWL_INSTALL.evt = null; if (typeof toast === "function") toast("インストールしました"); });
+const owlStandalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+/** プロフィールに出す「アプリとして追加」の行。すでにアプリとして開いていれば何も出さない */
+function owlInstallRow() {
+  if (owlStandalone()) return "";
+  const where = UI.isMobile ? "ホーム画面" : "デスクトップ";
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const how = OWL_INSTALL.evt ? `<button class="btn sm primary" data-install>${icon("dl")} ${where}に追加</button>`
+    : ios ? `<span class="small muted">Safari の共有ボタン →「ホーム画面に追加」</span>`
+    : `<span class="small muted">ブラウザのメニュー →「アプリとしてインストール」（Edge・Chrome）</span>`;
+  return `<div class="install-row"><div><b>${where}にアプリとして置く</b><div class="small muted">タブを探さず、アイコンから開けます。通知も届きます。</div></div>${how}</div>`;
+}
+async function owlInstall() {
+  const e = OWL_INSTALL.evt; if (!e) return;
+  e.prompt(); await e.userChoice.catch(() => { }); OWL_INSTALL.evt = null;
+}
+
 /* ---------- 起動画面 ---------- */
 const OWL_T0 = performance.now();
 (function owlSplash() {
+  // 起動中は JS が忙しいので、動きは JS に頼らず CSS（transform / opacity だけ）で作る。単一の画像＝首振りの読み込みも待たない
   const s = document.createElement("div");
   s.id = "owlSplash"; s.setAttribute("role", "status"); s.setAttribute("aria-label", "読み込み中");
-  s.innerHTML = `<div class="os-stage"><div class="owl-shadow"></div><div class="os-owl owl-float"></div></div>
-    <div class="os-name">owl</div><div class="os-dots" aria-hidden="true"><i></i><i></i><i></i></div>`;
+  s.innerHTML = `<div class="os-stage"><div class="os-shadow"></div><div class="os-float"><img class="os-owl" src="img/owl_hero.webp" alt="" width="190" height="190" decoding="async"></div></div>
+    <div class="os-name">owl</div><div class="os-bar" aria-hidden="true"><i></i></div>`;
   document.body.appendChild(s);
-  owlSprite(s.querySelector(".os-owl"));
 })();
 /** 起動が終わったら呼ぶ（ログイン画面・アプリ本体・失敗のどれでも）。最低表示時間を待ってから消す */
 const OWL_SPLASH = { node: document.getElementById("owlSplash"), gone: false };

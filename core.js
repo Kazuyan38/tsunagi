@@ -856,11 +856,11 @@ function showProfile(uid) {
       ${u.phone ? `<dt>電話</dt><dd><a href="tel:${esc(u.phone)}">${esc(u.phone)}</a></dd>` : ""}
       ${u.kana ? `<dt>ふりがな</dt><dd>${esc(u.kana)}</dd>` : ""}
       <dt>ID</dt><dd>${esc(u.login)}</dd>
-    </dl>`, {
+    </dl>${isMe ? owlInstallRow() : ""}`, {
     foot: isMe ? `<button class="btn danger" data-out>${icon("logout")} ログアウト</button><span class="grow"></span><button class="btn primary" data-edit>${icon("edit")} 編集</button>`
       : `${u.phone ? `<a class="btn" href="tel:${esc(u.phone)}">${icon("phone")} 電話</a>` : ""}<button class="btn primary" data-dm>${icon("chat")} メッセージ</button>`
   });
-  if (isMe) { $("[data-edit]", ov).onclick = () => { ov.close(); editProfile(); }; $("[data-out]", ov).onclick = () => signOut(); }
+  if (isMe) { $("[data-edit]", ov).onclick = () => { ov.close(); editProfile(); }; $("[data-out]", ov).onclick = () => signOut(); const ib = $("[data-install]", ov); if (ib) ib.onclick = async () => { await owlInstall(); ov.close(); }; }
   else $("[data-dm]", ov).onclick = async () => { ov.close(); const r = await api("/api/dm", { method: "POST", body: { user_ids: [uid] } }); await loadChannels(); UI.openChannel(r.id); };
 }
 

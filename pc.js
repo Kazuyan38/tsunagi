@@ -14,7 +14,7 @@ const UI = {
     try { const v = localStorage.getItem("tsunagi_side"); if (v) collapsed = v === "collapsed"; } catch { }
     document.body.innerHTML = `<div class="app${collapsed ? " collapsed" : ""}">
       <nav class="rail" aria-label="メイン">${LOGO}
-        <button class="rail-toggle" data-sidetoggle title="チャンネル一覧を開く／閉じる（Ctrl+\）" aria-label="チャンネル一覧を開閉">${icon("panel")}</button>
+        <button class="rail-toggle" data-sidetoggle title="チャンネル一覧を開く／閉じる（Ctrl+\\）" aria-label="チャンネル一覧を開閉">${icon("panel")}</button>
         ${[...NAV, ...(S.me.role === "admin" ? [["admin", "管理", "user"]] : [])].map(([k, l, i]) => `<button class="rail-btn" data-go="${k}" title="${l}">${icon(i)}<span>${l}</span><span class="badge" hidden></span></button>`).join("")}
         <span class="sp"></span>
         <button class="rail-btn" data-bell title="通知" aria-label="通知">${icon("bell")}<span>通知</span><span class="badge alert" hidden></span></button>
@@ -23,7 +23,7 @@ const UI = {
       </nav>
       <aside class="side" aria-label="チャンネル">
         <div class="side-top"><div class="row" style="gap:6px"><button class="search-btn grow" data-search>${icon("search")} 移動・検索<kbd>Ctrl K</kbd></button>
-          <button class="btn ghost icon" data-sidetoggle title="閉じる（Ctrl+\）" aria-label="チャンネル一覧を閉じる">${icon("panel")}</button></div>
+          <button class="btn ghost icon" data-sidetoggle title="閉じる（Ctrl+\\）" aria-label="チャンネル一覧を閉じる">${icon("panel")}</button></div>
           <div class="side-filter"><button class="chip" data-filter="unread" aria-pressed="false">${icon("filter")} 未読だけ表示</button></div></div>
         <div class="side-scroll"></div>
         <div class="conn" hidden><span class="dot"></span><span>再接続しています…</span></div>
@@ -84,6 +84,7 @@ const UI = {
   },
 
   toggleSide(force) {
+    if (this.section === "repo" && $(".repo")) return repoToggleFold($(".repo"));   // リポジトリ画面では、フォルダ一覧の開閉
     const app = $(".app");
     const collapsed = force ?? !app.classList.contains("collapsed");
     app.classList.toggle("collapsed", collapsed);

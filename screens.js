@@ -876,6 +876,8 @@ async function renderAdmin(el) {
       : resting ? (st.groq ? `<span style="color:var(--warn)">● 予備の Groq で動作中</span>（Cloudflare の無料枠は ${fmt(st.cf_paused_until)} に戻り、自動で切り替わります）` : `<span style="color:var(--warn)">● Cloudflare の今日の無料枠を使い切りました</span>（${fmt(st.cf_paused_until)} に戻ります）`)
       : `<span style="color:var(--ok)">● ${st.cloudflare ? "Cloudflare で動作中" : "Groq で動作中"}</span>`;
     box("ai").innerHTML = `<p style="margin:0 0 10px">${now}${st.configured ? `<br><span class="small muted">${esc(st.model.replace("@cf/openai/", ""))} · 確認 ${fmt(st.checked_at)}${st.error ? ` · 直近のエラー: <span style="color:var(--danger)">${esc(st.error)}</span>` : ""}</span>` : ""}</p>
+      <label class="row" style="gap:10px;align-items:flex-start;margin:0 0 4px;cursor:pointer"><input type="checkbox" data-aictx${st.context !== false ? " checked" : ""} style="margin-top:4px">
+        <span>アプリ内の情報を owl に渡して、答えの根拠にする<br><span class="small muted">渡すのは、質問した本人が画面で見られる範囲（自分の参加するチャット・予定・シフト・タスク・メール・連絡先・ファイル・リポジトリ）だけ。質問のたびに必要な分だけが AI の提供元（Cloudflare / Groq）に送られ、保存はされません。</span></span></label>
       <h3 class="small" style="margin:12px 0 6px">主: Cloudflare Workers AI ${st.cloudflare ? '<span style="color:var(--ok)">（設定済み）</span>' : ""}</h3>
       <form class="row wrap" style="gap:8px" data-aicfg>
         <input class="input grow" name="account" placeholder="アカウント ID（32 桁）" autocomplete="off" spellcheck="false" style="min-width:220px">
@@ -908,6 +910,10 @@ async function renderAdmin(el) {
     };
     save("[data-aicfg]", f => ({ action: "set_config", account_id: f.account.value, token: f.token.value, model: f.model.value }), "Cloudflare ");
     save("[data-groqcfg]", f => ({ action: "set_groq", token: f.token.value }), "Groq ");
+    $("[data-aictx]", el).onchange = async e => {
+      try { await fn("owl-ai", { action: "set_context", on: e.target.checked }); toast(e.target.checked ? "owl がアプリ内の情報を参照します" : "owl はアプリ内の情報を参照しません"); audit(); }
+      catch (er) { fail(er); e.target.checked = !e.target.checked; }
+    };
     $$("[data-aiclear]", el).forEach(c => c.onclick = async () => {
       const g = c.dataset.aiclear === "groq";
       if (await confirmBox(`${g ? "予備の Groq" : "Cloudflare"} の接続を解除しますか？`, "解除", true)) { await fn("owl-ai", { action: g ? "clear_groq" : "clear_config" }); aiBox(); audit(); }
@@ -923,7 +929,7 @@ async function renderAdmin(el) {
   const audit = async () => {
     const rows = must(await SB.from("audit_log").select("*").order("at", { ascending: false }).limit(100));
     const L = { "invite.create": "招待コードを発行", "invite.revoke": "招待コードを無効化", "member.register": "新規登録", "member.role": "権限を変更", "member.deactivate": "利用停止",
-      "member.reactivate": "利用再開", "member.reset_password": "仮パスワードを発行", "mail.configure": "共有 Gmail を設定", "mail.disconnect": "共有 Gmail を切断", "team.rename": "チーム名を変更", "data.export": "データを書き出し", "repo.configure": "リポジトリを接続", "repo.disconnect": "リポジトリを切断", "ai.configure": "owl の AI を接続", "ai.disconnect": "owl の AI を切断" };
+      "member.reactivate": "利用再開", "member.reset_password": "仮パスワードを発行", "mail.configure": "共有 Gmail を設定", "mail.disconnect": "共有 Gmail を切断", "team.rename": "チーム名を変更", "data.export": "データを書き出し", "repo.configure": "リポジトリを接続", "repo.disconnect": "リポジトリを切断", "ai.configure": "owl の AI を接続", "ai.disconnect": "owl の AI を切断", "ai.context": "owl のアプリ内参照を切り替え" };
     box("audit").innerHTML = rows.length ? `<table class="tbl"><tbody>${rows.map(r => `<tr><td class="small" style="white-space:nowrap">${fmtTs(r.at)}</td><td>${esc(r.actor_id ? U(r.actor_id).name : "—")}</td>
       <td>${esc(L[r.action] || r.action)}</td><td class="small muted hide-sm">${esc(Object.entries(r.detail || {}).map(([k, v]) => `${k}: ${v}`).join(" / "))}</td></tr>`).join("")}</tbody></table>` : '<p class="small muted">まだ記録はありません</p>';
   };

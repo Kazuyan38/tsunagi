@@ -255,10 +255,10 @@ button.read-mark:hover { background: var(--bg-2); color: var(--ink-2); }
 @keyframes fade { from { opacity: 0; } }
 .modal {
   background: var(--surface); border-radius: 18px; box-shadow: var(--shadow-3); width: min(560px, calc(100vw - 32px));
-  max-height: calc(100vh - 48px); display: flex; flex-direction: column; overflow: hidden;
+  max-height: calc(100vh - 48px); max-height: calc(100dvh - 48px); display: flex; flex-direction: column; overflow: hidden;
   animation: pop .22s var(--ease);
 }
-.modal.wide { width: min(1100px, calc(100vw - 32px)); height: calc(100vh - 48px); }
+.modal.wide { width: min(1100px, calc(100vw - 32px)); height: calc(100vh - 48px); height: calc(100dvh - 48px); }
 @keyframes pop { from { transform: translateY(8px) scale(.985); opacity: 0; } }
 .modal-head { display: flex; align-items: center; gap: 10px; padding: 16px 18px 12px; border-bottom: 1px solid var(--line); }
 .modal-head h3 { margin: 0; font-size: 16.5px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -393,25 +393,37 @@ button.read-mark:hover { background: var(--bg-2); color: var(--ink-2); }
 @keyframes owlShadow { 50% { transform: scaleX(.84); opacity: .65; } }
 
 /* ===== フクロウ（owl.js）: 首振りスプライト＋浮遊・首かしげ・跳ね ===== */
-.owl-sprite { background-repeat: no-repeat; background-size: 2400% 100%; }
+.owl-sprite { background-repeat: no-repeat; background-size: 2400% 100%; position: relative; }
+.owl-sprite > .osp { position: absolute; inset: 0; pointer-events: none; opacity: 0; }
 .owl-sprite.still { background-size: contain; background-position: center; }
 .owl-float { animation: owlFloat 4.8s ease-in-out infinite; transform-origin: 50% 85%; }
 @keyframes owlFloat { 0%, 100% { transform: translateY(0) rotate(0); } 30% { transform: translateY(-3.5%) rotate(-2.5deg); } 62% { transform: translateY(-4.5%) rotate(2deg); } }
 .owl-float.hop { animation: owlHop .55s cubic-bezier(.3, 1.5, .5, 1); }
 @keyframes owlHop { 0% { transform: scale(1, 1); } 25% { transform: translateY(2%) scale(1.08, .9); } 55% { transform: translateY(-14%) scale(.95, 1.06); } 100% { transform: translateY(0) scale(1, 1); } }
 
-/* 起動画面: 少し長めに見せ（OWL_SPLASH_MIN）、ふわっと消す */
+/* 起動画面: 少し長めに見せ（OWL_SPLASH_MIN）、ふわっと消す。
+   動きは transform / opacity だけ（描き直しが要らず、起動で JS が忙しくても止まらない）。消えるときも opacity だけ */
 #owlSplash { position: fixed; inset: 0; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
   background: radial-gradient(900px 520px at 50% 0%, #e6ebff 0%, rgba(230, 235, 255, 0) 62%), radial-gradient(700px 420px at 100% 110%, #dff5f1 0%, rgba(223, 245, 241, 0) 60%), var(--bg);
-  transition: opacity .45s ease, transform .45s ease; }
-#owlSplash.out { opacity: 0; transform: scale(1.03); pointer-events: none; }
-#owlSplash .os-stage { position: relative; width: 190px; height: 190px; }
-#owlSplash .os-owl { width: 100%; height: 100%; }
-#owlSplash .os-name { font-size: 24px; font-weight: 700; letter-spacing: .14em; color: var(--ink); margin-top: 4px; }
+  transition: opacity .5s ease; will-change: opacity; }
+#owlSplash.out { opacity: 0; pointer-events: none; }
+#owlSplash .os-stage { position: relative; width: 190px; height: 190px; animation: osIn .7s cubic-bezier(.2, .8, .2, 1) both; will-change: transform, opacity; }
+#owlSplash .os-float { position: absolute; inset: 0; animation: osFloat 3.6s ease-in-out infinite; will-change: transform; }
+#owlSplash .os-owl { display: block; width: 100%; height: 100%; object-fit: contain; transform-origin: 50% 80%; animation: osLook 7.2s ease-in-out infinite; will-change: transform; }
+#owlSplash .os-shadow { position: absolute; left: 24%; right: 24%; bottom: 2px; height: 18px; border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(38, 48, 110, .26), rgba(38, 48, 110, 0)); animation: osShadow 3.6s ease-in-out infinite; will-change: transform, opacity; }
+#owlSplash .os-name { font-size: 24px; font-weight: 700; letter-spacing: .14em; color: var(--ink); margin-top: 4px; animation: osIn .7s .12s cubic-bezier(.2, .8, .2, 1) both; }
+#owlSplash .os-bar { width: 96px; height: 3px; border-radius: 3px; overflow: hidden; background: rgba(75, 99, 230, .14); margin-top: 8px; animation: osIn .7s .2s cubic-bezier(.2, .8, .2, 1) both; }
+#owlSplash .os-bar i { display: block; width: 46%; height: 100%; border-radius: 3px; background: var(--accent); animation: osBar 1.5s cubic-bezier(.45, 0, .55, 1) infinite; will-change: transform; }
+@keyframes osIn { from { opacity: 0; transform: translate3d(0, 10px, 0) scale(.96); } }
+@keyframes osFloat { 0%, 100% { transform: translate3d(0, 0, 0); } 50% { transform: translate3d(0, -7%, 0); } }
+@keyframes osShadow { 0%, 100% { transform: scale(1, 1); opacity: 1; } 50% { transform: scale(.78, .9); opacity: .55; } }
+@keyframes osLook { 0%, 100% { transform: perspective(700px) rotateY(0deg) rotateZ(0deg); } 22% { transform: perspective(700px) rotateY(-15deg) rotateZ(-2.5deg); } 50% { transform: perspective(700px) rotateY(0deg) rotateZ(0deg); } 78% { transform: perspective(700px) rotateY(15deg) rotateZ(2.5deg); } }
+@keyframes osBar { from { transform: translate3d(-100%, 0, 0); } to { transform: translate3d(220%, 0, 0); } }
 .os-dots { display: flex; gap: 6px; height: 14px; align-items: center; }
-.os-dots i, .owlchat .typing .oc-b i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); opacity: .25; animation: owlDot 1.2s ease-in-out infinite; }
-.os-dots i:nth-child(2), .owlchat .typing .oc-b i:nth-child(2) { animation-delay: .18s; }
-.os-dots i:nth-child(3), .owlchat .typing .oc-b i:nth-child(3) { animation-delay: .36s; }
+.owlchat .typing .oc-b i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); opacity: .25; animation: owlDot 1.2s ease-in-out infinite; }
+.owlchat .typing .oc-b i:nth-child(2) { animation-delay: .18s; }
+.owlchat .typing .oc-b i:nth-child(3) { animation-delay: .36s; }
 @keyframes owlDot { 40% { opacity: 1; transform: translateY(-3px); } }
 
 /* 本体のフクロウ（PC は左の帯の一番上、スマホは見出しの左）。押すと owl とのチャット */
@@ -442,7 +454,7 @@ button.read-mark:hover { background: var(--bg-2); color: var(--ink-2); }
 .oc-form { display: flex; gap: 8px; align-items: flex-end; padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: var(--surface); }
 .oc-form textarea { flex: 1; resize: none; min-height: 42px; max-height: 140px; padding: 10px 12px; font-size: 16px; line-height: 1.4; }
 .oc-form .btn { height: 42px; width: 46px; padding: 0; display: grid; place-items: center; }
-@media (prefers-reduced-motion: reduce) { .owl-float, .owl-float.hop, .owl-shadow, .os-dots i { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .owl-float, .owl-float.hop, .owl-shadow, #owlSplash .os-stage, #owlSplash .os-float, #owlSplash .os-owl, #owlSplash .os-shadow, #owlSplash .os-name, #owlSplash .os-bar, #owlSplash .os-bar i { animation: none; } #owlSplash .os-bar i { width: 100%; opacity: .5; } }
 .login-card { width: 100%; padding: 56px 26px 22px; box-shadow: var(--shadow-2); border-radius: 22px; }
 .login-card h1 { margin: 0; font-size: 26px; letter-spacing: .08em; text-align: center; }
 .login-lead { margin: 4px 0 0; text-align: center; font-size: 13.5px; }
@@ -504,7 +516,14 @@ button.read-mark:hover { background: var(--bg-2); color: var(--ink-2); }
 .pat-steps ol { margin: 10px 0 0; padding-left: 20px; color: var(--ink-2); line-height: 1.8; }
 
 /* リポジトリ */
-.repo { display: grid; grid-template-columns: 340px minmax(0, 1fr); height: 100vh; min-height: 0; }
+.repo { display: grid; grid-template-columns: 340px minmax(0, 1fr); height: 100vh; height: 100dvh; min-height: 0; position: relative; transition: grid-template-columns .22s cubic-bezier(.2, .8, .2, 1); }
+.repo.folded:not(.is-mobile) { grid-template-columns: 0 minmax(0, 1fr); }
+.repo.folded .repo-side { visibility: hidden; overflow: hidden; border-right: 0; }
+.repo-unfold { display: none; position: absolute; left: 12px; top: 12px; z-index: 3; width: 38px; height: 38px; padding: 0; place-items: center; box-shadow: var(--shadow-1); }
+.repo.folded .repo-unfold { display: inline-grid; }
+.repo.folded .rf-head { padding-left: 62px; }
+.repo.folded .repo-view > .empty { padding-top: 64px; }
+@media (max-width: 1100px) { .repo { grid-template-columns: 290px minmax(0, 1fr); } }
 .repo.is-mobile { display: block; height: auto; }
 .repo-side { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); background: var(--surface); }
 .repo.is-mobile .repo-side { border: 0; background: transparent; }
@@ -705,7 +724,7 @@ select.sm-select { width: auto; min-height: 36px; padding: 4px 10px; font-size: 
 
 /* ---------- 通知 ---------- */
 .nt-pop { max-width: none; width: 380px; padding: 0; overflow: hidden; }
-.nt { display: flex; flex-direction: column; max-height: min(560px, calc(100vh - 32px)); }
+.nt { display: flex; flex-direction: column; max-height: min(560px, calc(100vh - 32px)); max-height: min(560px, calc(100dvh - 32px)); }
 .nt-m { max-height: none; }
 .nt-head { display: flex; align-items: center; gap: 4px; padding: 10px 10px 8px 16px; border-bottom: 1px solid var(--line); }
 .nt-head b { font-size: 15px; }
@@ -741,3 +760,8 @@ input.switch:checked::after { transform: translateX(16px); }
 .bell-btn { position: relative; }
 .bell-btn .badge { position: absolute; top: 3px; right: 2px; height: 17px; min-width: 17px; padding: 0 4px; font-size: 10px; }
 .rail .owl-buddy { margin-bottom: 8px; }
+
+/* アプリとして追加（プロフィール） */
+.install-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+.install-row b { font-size: 14px; }
+@media (max-width: 480px) { .install-row { flex-direction: column; align-items: flex-start; } }

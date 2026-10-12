@@ -9,11 +9,14 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://fgqmbgmukyvgonzczsgh.supabase.co; media-src 'self' blob: https://fgqmbgmukyvgonzczsgh.supabase.co; frame-src blob: https://fgqmbgmukyvgonzczsgh.supabase.co; connect-src 'self' https://fgqmbgmukyvgonzczsgh.supabase.co wss://fgqmbgmukyvgonzczsgh.supabase.co; object-src 'none'; base-uri 'self'; form-action 'self'">
 <link rel="icon" href="img/favicon-64.png" type="image/png">
 <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<script src="fit.js"></script>
+<link rel="preload" as="image" href="img/owl_hero.webp">
 <link rel="stylesheet" href="core.css">
 <style>
   body { overflow: hidden; }
   body.is-login { overflow: auto; }
-  .app { display: grid; grid-template-columns: 76px 264px minmax(0, 1fr); height: 100vh; transition: grid-template-columns .22s cubic-bezier(.2,.8,.2,1); }
+  .app { display: grid; grid-template-columns: 76px 264px minmax(0, 1fr); height: 100vh; height: 100dvh; transition: grid-template-columns .22s cubic-bezier(.2,.8,.2,1); }
   /* サイドバーを畳んだ状態: レールだけ残し、本文を広く使う */
   .app.collapsed, .app.own-list { grid-template-columns: 76px 0 minmax(0, 1fr); }
   .app.collapsed .side, .app.own-list .side { visibility: hidden; border-right: 0; }
@@ -37,6 +40,25 @@
   .claude-btn .ico { width: 24px; height: 24px; }
   .claude-cap { font-size: 10px; font-weight: 700; color: #c15f33; margin-bottom: 10px; }
   .me-btn { border-radius: 12px; }
+  .rail { min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }
+  .rail::-webkit-scrollbar { display: none; }
+  .rail > * { flex: none; }
+  .rail .sp { flex: 1 0 8px; }
+  /* ノート PC の表示拡大（125〜150%）など、高さが低い画面ではレールを詰める */
+  @media (max-height: 860px) {
+    .rail { padding: 8px 0; gap: 1px; }
+    .rail .owl-buddy { --s: 42px !important; margin-bottom: 4px; }
+    .rail-toggle { height: 28px; margin: 0 0 4px; }
+    .rail-btn { padding: 5px 0 3px; }
+    .rail-btn .ico { width: 20px; height: 20px; }
+    .claude-btn { width: 40px; height: 40px; border-radius: 13px; margin-bottom: 2px; }
+    .claude-btn .ico { width: 20px; height: 20px; }
+    .claude-cap { display: none; }
+  }
+  @media (max-height: 740px) {
+    .rail-btn { width: 52px; padding: 7px 0; }
+    .rail-btn > span:not(.badge) { display: none; }
+  }
 
   /* チャンネル一覧 */
   .side { background: var(--surface); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
@@ -66,7 +88,7 @@
   .main.chat-mode { overflow: hidden; }
 
   /* チャット */
-  .chat { display: flex; flex-direction: column; height: 100vh; }
+  .chat { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
   .chat-head { display: flex; align-items: center; gap: 12px; padding: 0 20px; height: 62px; border-bottom: 1px solid var(--line); background: var(--surface); flex: none; }
   .chat-head .ttl { font-size: 17px; font-weight: 800; white-space: nowrap; }
   .chat-head .topic { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
@@ -74,7 +96,7 @@
   .composer { background: var(--surface); }
   .typing { background: var(--surface); }
 
-  .mail { height: 100vh; }
+  .mail { height: 100vh; height: 100dvh; }
   @media (max-width: 1180px) { .mail { grid-template-columns: 150px minmax(280px, 340px) minmax(0, 1fr); } .box-btn { font-size: 13px; padding: 7px 8px; } }
   @media (max-width: 1000px) { .app:not(.collapsed) { grid-template-columns: 76px 220px minmax(0, 1fr); } .home-hero { grid-template-columns: 1fr; } }
 </style>

@@ -5,6 +5,14 @@
 "use strict";
 
 const repoState = { q: "", open: new Set(), tree: null, status: null, current: null, indexing: false };
+/** フォルダ一覧（左の列）をたたむ。保存した設定が無ければ、狭い画面ではたたんで始める */
+const repoFolded = () => { try { const v = localStorage.getItem("tsunagi_repo_side"); if (v) return v === "folded"; } catch { } return innerWidth < 1000; };
+function repoSetFold(root, folded, persist = true) {
+  root.classList.toggle("folded", folded);
+  $$("[data-repofold]", root).forEach(b => b.setAttribute("aria-expanded", String(!folded)));
+  if (persist) try { localStorage.setItem("tsunagi_repo_side", folded ? "folded" : "open"); } catch { }
+}
+const repoToggleFold = root => repoSetFold(root, !root.classList.contains("folded"));
 const TEXT_LIKE = new Set(["md", "txt", "csv", "tsv", "json", "yml", "yaml", "toml", "ini", "py", "js", "ts", "tsx", "jsx", "html", "css", "xml", "sql", "sh", "ps1", "bat", "log", "rst", "tex", "svg"]);
 const extOfPath = p => ((p.split("/").pop().match(/\.([^.]+)$/) || [])[1] || "").toLowerCase();
 
@@ -137,13 +145,17 @@ async function renderRepo(el, { mobile = false } = {}) {
   el.innerHTML = `<div class="repo${mobile ? " is-mobile" : ""}">
     <section class="repo-side">
       <div class="repo-head"><div class="grow" style="min-width:0"><div class="repo-name ellipsis">${icon("file")} <span>リポジトリ</span></div><div class="repo-sub small muted ellipsis"></div></div>
-        <a class="btn ghost icon" data-gh target="_blank" rel="noopener" title="GitHub で開く" hidden>${icon("share")}</a></div>
+        <a class="btn ghost icon" data-gh target="_blank" rel="noopener" title="GitHub で開く" hidden>${icon("share")}</a>
+        ${mobile ? "" : `<button class="btn ghost icon" data-repofold title="一覧をたたむ（Ctrl+\\）" aria-label="フォルダ一覧をたたむ" aria-expanded="true">${icon("panel")}</button>`}</div>
       <div class="repo-search"><span class="ico-in">${icon("search")}</span><input class="input" type="search" placeholder="キーワードで検索（中身も探します）" value="${esc(repoState.q)}" aria-label="リポジトリを検索"></div>
       <div class="repo-list"><div class="empty">読み込み中…</div></div>
     </section>
-    ${mobile ? "" : `<section class="repo-view"><div class="empty"><b>左の一覧からファイルを選ぶか、キーワードで探してください</b>Markdown・Word・Excel・PowerPoint・PDF・画像はこの画面で開けます</div></section>`}
+    ${mobile ? "" : `<button class="btn icon repo-unfold" data-repofold title="フォルダ一覧を開く（Ctrl+\\）" aria-label="フォルダ一覧を開く" aria-expanded="false">${icon("panel")}</button>
+    <section class="repo-view"><div class="empty"><b>左の一覧からファイルを選ぶか、キーワードで探してください</b>Markdown・Word・Excel・PowerPoint・PDF・画像はこの画面で開けます</div></section>`}
   </div>`;
   const list = $(".repo-list", el), input = $(".repo-search input", el), sub = $(".repo-sub", el);
+  const root = $(".repo", el);
+  if (!mobile) { repoSetFold(root, repoFolded(), false); root.addEventListener("click", e => { if (e.target.closest("[data-repofold]")) repoToggleFold(root); }); }
   const st = repoState.status = must(await SB.rpc("repo_status"));
   if (!st.configured) {
     list.innerHTML = `<div class="empty"><b>リポジトリはまだつながっていません</b>${S.me.role === "admin" ? "管理 → GitHub リポジトリ から設定できます" : "管理者が設定します"}</div>`;
@@ -184,7 +196,10 @@ async function renderRepo(el, { mobile = false } = {}) {
     const d = e.target.closest("[data-dir]");
     if (d) { repoState.open.has(d.dataset.dir) ? repoState.open.delete(d.dataset.dir) : repoState.open.add(d.dataset.dir); return drawTree(); }
     const f = e.target.closest("[data-path]");
-    if (f) { repoState.current = f.dataset.path; $$(".sel", list).forEach(x => x.classList.remove("sel")); f.classList.add("sel"); openRepoFile(f.dataset.path, mobile ? null : $(".repo-view", el)); }
+    if (f) {
+      repoState.current = f.dataset.path; $$(".sel", list).forEach(x => x.classList.remove("sel")); f.classList.add("sel"); openRepoFile(f.dataset.path, mobile ? null : $(".repo-view", el));
+      if (!mobile && innerWidth < 1000) repoSetFold(root, true, false);   // 狭い画面では、ファイルを開いたら本文を広く見せる
+    }
   };
 
   try { repoState.tree = await repoCall({ action: "tree" }); } catch (e) { list.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
