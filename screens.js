@@ -83,10 +83,9 @@ async function renderHome(el) {
     setCard("mail", `<div class="list">${h.mail.slice(0, LIMIT).map(m => mailRow(m, true)).join("")}</div>${more(h.mail.length, "mail")}`, !h.mail.length);
     setCard("events", h.events.map(e => `<button class="ev-row" data-ev="${e.id}"><span class="tm">${e.all_day ? "終日" : fmtTime(e.start)}</span><span class="bar" style="background:${esc(e.color || "var(--accent)")}"></span>
       <span class="grow"><b>${esc(e.title)}</b><div class="small muted">${esc(e.location || "")}${e.all_day ? "" : ` · 〜${fmtTime(e.end)}`}</div></span></button>`).join(""), !h.events.length);
-    const kinds = S.cfg.shift_kinds;
-    const mine = h.my_shift ? kinds[h.my_shift] : null;
-    setCard("shift", `<div class="row" style="margin-bottom:10px"><span class="small muted">あなた</span>${mine ? `<span class="chip" style="background:${mine.color}22;color:${mine.color}">${mine.label} ${mine.time}</span>` : `<span class="chip">未設定</span>`}</div>
-      ${h.working.length ? `<div class="row wrap" style="gap:6px">${h.working.map(w => `<span class="chip" title="${esc(kinds[w.kind]?.label)}">${avatar(U(w.user_id), 18, false)} ${esc(shortName(U(w.user_id)))} <span style="color:${kinds[w.kind]?.color}">${esc(kinds[w.kind]?.label || "")}</span></span>`).join("")}</div>` : `<div class="muted small">出勤予定のメンバーはいません</div>`}`, !mine && !h.working.length);
+    const mine = h.my_shift;
+    setCard("shift", `<div class="row" style="margin-bottom:10px"><span class="small muted">あなた</span>${mine ? `<span class="chip${mine.kind === "work" ? " on" : ""}">${shiftLabel(mine)}</span>` : `<span class="chip">未設定</span>`}</div>
+      ${h.working.length ? `<div class="row wrap" style="gap:6px">${h.working.map(w => `<span class="chip">${avatar(U(w.user_id), 18, false)} ${esc(shortName(U(w.user_id)))} <span class="muted">${shiftLabel(w)}</span></span>`).join("")}</div>` : `<div class="muted small">出勤予定のメンバーはいません</div>`}`, !mine && !h.working.length);
     const unreadTotal = att.reduce((a, c) => a + c.unread, 0);
     const parts = [unreadTotal ? `未読 ${unreadTotal} 件` : "", h.mail.length ? `メール ${h.mail.length} 件` : "", h.events.length ? `予定 ${h.events.length} 件` : ""].filter(Boolean);
     setStat("unread", unreadTotal, att.some(c => c.mentions) ? "alert" : "");
@@ -367,36 +366,81 @@ function editEvent(ev, day) {
   };
 }
 
-/* ================================================================ シフト */
+/* ================================================================ シフト（各自が時間帯を入れる） */
 const shiftState = { week: null, day: null };
+const hm = t => (t || "").slice(0, 5);
+/** 時間数（日をまたぐ夜勤も正しく数える）。 */
+function shiftHours(s) {
+  if (!s || s.kind !== "work" || !s.start_time || !s.end_time) return 0;
+  const [a, b] = [s.start_time, s.end_time].map(x => { const [h, m] = x.split(":").map(Number); return h * 60 + m; });
+  return ((b - a + 1440) % 1440 || 1440) / 60;
+}
+/** 狭い枠用: 10:00 → 10、17:30 → 17:30 */
+const shortTime = t => hm(t).replace(/:00$/, "").replace(/^0(\d)/, "$1");
+const fmtH = h => (Math.round(h * 10) / 10).toString().replace(/\.0$/, "") + "h";
+function shiftLabel(s, short) {
+  if (!s) return "";
+  if (s.kind === "off") return "休み";
+  return short ? `${hm(s.start_time)}<small>–${hm(s.end_time)}</small>` : `${hm(s.start_time)}–${hm(s.end_time)}`;
+}
+
+/** 時間帯の入力。前に使った時間帯（この人の直近）を 1 回で選べるようにする。 */
+async function editShift(uid, date, current, done) {
+  const { data: hist } = await SB.from("shifts").select("start_time,end_time").eq("user_id", uid).eq("kind", "work").order("date", { ascending: false }).limit(40);
+  const recent = [...new Map((hist || []).map(h => [`${hm(h.start_time)}-${hm(h.end_time)}`, h])).values()].slice(0, 4);
+  const d = new Date(date + "T00:00");
+  const ov = modal(`${U(uid).name} · ${d.getMonth() + 1}/${d.getDate()}（${WD[d.getDay()]}）`, `
+    ${recent.length ? `<div class="field"><span>前に入れた時間帯</span><div class="row wrap" style="gap:6px">${recent.map(r => `<button type="button" class="chip" data-pre="${hm(r.start_time)}-${hm(r.end_time)}">${hm(r.start_time)}–${hm(r.end_time)}</button>`).join("")}</div></div>` : ""}
+    <div class="ev-when shift-when"><label class="field"><span>開始</span><input class="input" type="time" name="s" step="900" value="${current && current.kind === "work" ? hm(current.start_time) : "10:00"}"></label>
+      <label class="field"><span>終了</span><input class="input" type="time" name="e" step="900" value="${current && current.kind === "work" ? hm(current.end_time) : "15:00"}"></label></div>
+    <p class="small muted shift-dur" style="margin:-4px 0 12px"></p>
+    <label class="field"><span>メモ（任意）</span><input class="input" name="note" value="${esc(current?.note || "")}" placeholder="例: 3限のあと／テスト期間"></label>`,
+    { foot: `${current ? `<button class="btn ghost" data-clear>クリア</button>` : ""}<button class="btn" data-off>休み</button><span class="grow"></span><button class="btn primary" data-save>保存</button>` });
+  const s = $("[name=s]", ov), e = $("[name=e]", ov);
+  const dur = () => { $(".shift-dur", ov).textContent = s.value && e.value ? `${fmtH(shiftHours({ kind: "work", start_time: s.value, end_time: e.value }))}${e.value <= s.value ? "（翌日まで）" : ""}` : ""; };
+  [s, e].forEach(x => x.oninput = dur); dur();
+  $$("[data-pre]", ov).forEach(b => b.onclick = () => { [s.value, e.value] = b.dataset.pre.split("-"); dur(); });
+  const put = async body => {
+    try { await api("/api/shifts", { method: "PUT", body: { user_id: uid, date, note: $("[name=note]", ov).value, ...body } }); ov.close(); done && done(); }
+    catch (er) { fail(er); }
+  };
+  $("[data-save]", ov).onclick = () => { if (!s.value || !e.value) return toast("開始と終了を入れてください", true); if (s.value === e.value) return toast("開始と終了が同じです", true); put({ kind: "work", start: s.value, end: e.value }); };
+  $("[data-off]", ov).onclick = () => put({ kind: "off" });
+  const c = $("[data-clear]", ov); if (c) c.onclick = () => put({ kind: "" });
+}
+
 async function renderShifts(el, { mobile = false } = {}) {
   const mon = shiftState.week || (() => { const d = new Date(); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d; })();
   shiftState.week = mon;
   const days = [...Array(7)].map((_, i) => { const d = new Date(mon); d.setDate(mon.getDate() + i); return d; });
   const rows = await api(`/api/shifts?start=${ymd(days[0])}&end=${ymd(days[6])}`);
-  const K = S.cfg.shift_kinds, t = todayStr(), users = Object.values(S.users);
+  const t = todayStr(), users = Object.values(S.users).filter(u => u.active !== false);
   const get = (uid, ds) => rows.find(r => r.user_id === uid && r.date === ds);
-  const cell = (uid, ds) => { const s = get(uid, ds), k = s && K[s.kind];
-    return `<button class="shift-cell${k ? "" : " empty"}" data-u="${uid}" data-d="${ds}" style="${k ? `background:${k.color}1f;color:${k.color}` : ""}">${k ? `${k.label}${k.time && !mobile ? `<small>${k.time}</small>` : ""}` : "＋"}</button>`; };
+  const weekH = uid => rows.filter(r => r.user_id === uid).reduce((a, r) => a + shiftHours(r), 0);
+  const cell = (uid, ds) => {
+    const s = get(uid, ds);
+    const cls = !s ? " blank" : s.kind === "off" ? " off" : " work";
+    return `<button class="shift-cell${cls}" data-u="${uid}" data-d="${ds}" title="${s && s.note ? esc(s.note) : ""}">${s ? shiftLabel(s, !mobile) : "＋"}${s && s.note ? '<i class="shift-note"></i>' : ""}</button>`;
+  };
   const head = `<header class="page-head"><h1>シフト</h1>
     <button class="btn icon" data-pw aria-label="前の週">${icon("chevl")}</button><button class="btn sm" data-tw>今週</button><button class="btn icon" data-nw aria-label="次の週">${icon("chev")}</button>
-    <span class="small muted">${fmtDay(ymd(days[0]))} 〜 ${fmtDay(ymd(days[6]))}</span><span class="grow"></span>
-    <div class="row wrap small shift-legend" style="gap:6px">${Object.values(K).map(k => `<span class="chip" style="background:${k.color}1f;color:${k.color}">${k.label}${k.time ? " " + k.time : ""}</span>`).join("")}</div></header>`;
+    <span class="small muted">${fmtDay(ymd(days[0]))} 〜 ${fmtDay(ymd(days[6]))}</span></header>`;
   if (!mobile) {
     el.innerHTML = `<div class="page">${head}<div style="overflow-x:auto"><table class="shift-grid"><thead><tr><th style="text-align:left;padding-left:12px">メンバー</th>
-      ${days.map(d => `<th class="${ymd(d) === t ? "today" : ""}">${d.getMonth() + 1}/${d.getDate()}<br>${WD[d.getDay()]}</th>`).join("")}</tr></thead><tbody>
-      ${users.map(u => `<tr><td class="who"><span class="row">${avatar(u, 26)}<span>${esc(u.name)}</span></span></td>${days.map(d => `<td>${cell(u.id, ymd(d))}</td>`).join("")}</tr>`).join("")}
-      <tr><td class="who small muted">出勤人数</td>${days.map(d => `<td class="small"><b>${rows.filter(r => r.date === ymd(d) && r.kind !== "off").length}</b> 人</td>`).join("")}</tr>
-      </tbody></table></div><p class="small muted">セルをクリックしてシフトを選びます。変更は全員の画面に即時反映されます。</p></div>`;
+      ${days.map(d => `<th class="${ymd(d) === t ? "today" : ""}">${d.getMonth() + 1}/${d.getDate()}<br>${WD[d.getDay()]}</th>`).join("")}<th>週の合計</th></tr></thead><tbody>
+      ${users.map(u => `<tr><td class="who"><span class="row">${avatar(u, 26)}<span>${esc(u.name)}</span></span></td>${days.map(d => `<td>${cell(u.id, ymd(d))}</td>`).join("")}<td class="week-h">${weekH(u.id) ? fmtH(weekH(u.id)) : "—"}</td></tr>`).join("")}
+      <tr><td class="who small muted">入る人数</td>${days.map(d => `<td class="small"><b>${rows.filter(r => r.date === ymd(d) && r.kind === "work").length}</b> 人</td>`).join("")}<td></td></tr>
+      </tbody></table></div><p class="small muted">自分のセルを押して、入れる時間帯を入れます（15 分単位）。変更は全員の画面にすぐ反映されます。</p></div>`;
   } else {
     const sel = shiftState.day && days.some(d => ymd(d) === shiftState.day) ? shiftState.day : (days.some(d => ymd(d) === t) ? t : ymd(days[0]));
     shiftState.day = sel;
+    const me = S.me.id;
     el.innerHTML = `<div class="page">${head}
-      <div class="day-strip">${days.map(d => { const ds = ymd(d); const n = rows.filter(r => r.date === ds && r.kind !== "off").length;
+      <div class="day-strip">${days.map(d => { const ds = ymd(d); const n = rows.filter(r => r.date === ds && r.kind === "work").length;
         return `<button class="${ds === sel ? "on" : ""}${ds === t ? " today" : ""}" data-pick="${ds}"><small>${WD[d.getDay()]}</small><b>${d.getDate()}</b><small>${n}人</small></button>`; }).join("")}</div>
-      <div class="list card" style="overflow:hidden">${users.map(u => `<div class="li">${avatar(u, 32)}<span class="grow">${esc(u.name)}${u.id === S.me.id ? ' <span class="small muted">（あなた）</span>' : ""}</span><span style="width:110px">${cell(u.id, sel)}</span></div>`).join("")}</div>
-      <div class="section-title" style="margin-top:18px">あなたの今週</div>
-      <div class="row wrap" style="gap:6px">${days.map(d => { const s = get(S.me.id, ymd(d)), k = s && K[s.kind]; return `<span class="chip">${d.getDate()}(${WD[d.getDay()]}) <b style="color:${k ? k.color : "var(--muted)"}">${k ? k.label : "—"}</b></span>`; }).join("")}</div></div>`;
+      <div class="list card" style="overflow:hidden">${users.map(u => `<div class="li">${avatar(u, 32)}<span class="grow">${esc(u.name)}${u.id === me ? ' <span class="small muted">（あなた）</span>' : ""}</span><span style="width:124px">${cell(u.id, sel)}</span></div>`).join("")}</div>
+      <div class="section-title" style="margin-top:18px">あなたの今週 <span class="badge soft">${fmtH(weekH(me))}</span></div>
+      <div class="my-week">${days.map(d => { const s = get(me, ymd(d)); return `<button class="mw-day${ymd(d) === t ? " today" : ""}" data-mine="${ymd(d)}"><small>${d.getDate()}(${WD[d.getDay()]})</small><b>${!s ? "—" : s.kind === "off" ? "休み" : `${shortTime(s.start_time)}<br>–${shortTime(s.end_time)}`}</b></button>`; }).join("")}</div></div>`;
   }
   el.onclick = e => {
     const tg = e.target;
@@ -405,12 +449,10 @@ async function renderShifts(el, { mobile = false } = {}) {
     if (tg.closest("[data-nw]")) return shift(7);
     if (tg.closest("[data-tw]")) { shiftState.week = null; return renderShifts(el, { mobile }); }
     if (tg.closest("[data-pick]")) { shiftState.day = tg.closest("[data-pick]").dataset.pick; return renderShifts(el, { mobile }); }
+    const mine = tg.closest("[data-mine]"); if (mine) return editShift(S.me.id, mine.dataset.mine, get(S.me.id, mine.dataset.mine));
     const c = tg.closest(".shift-cell"); if (!c) return;
-    if (c.dataset.u !== S.me.id && S.me.role !== "admin") return toast("他の人のシフトは本人か管理者だけが変更できます", true);
-    popover(c, `<div class="menu">${Object.entries(K).map(([k, v]) => `<button data-k="${k}"><span class="dot" style="background:${v.color}"></span>${v.label}<span class="muted small">${v.time}</span></button>`).join("")}<hr><button data-k="">クリア</button></div>`, {
-      onMount: p => p.onclick = async ev => { const b = ev.target.closest("[data-k]"); if (!b) return; closePop();
-        await api("/api/shifts", { method: "PUT", body: { user_id: c.dataset.u, date: c.dataset.d, kind: b.dataset.k } }).catch(fail); }
-    });
+    if (c.dataset.u !== S.me.id && S.me.role !== "admin") return toast("ほかの人のシフトは本人か管理者だけが変更できます", true);
+    editShift(c.dataset.u, c.dataset.d, get(c.dataset.u, c.dataset.d));
   };
   const moveWeek = n => { const d = new Date(mon); d.setDate(d.getDate() + n); shiftState.week = d; renderShifts(el, { mobile }); };
   if (mobile) {

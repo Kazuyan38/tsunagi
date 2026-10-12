@@ -7,14 +7,6 @@ const SB = supabase.createClient(TSUNAGI.url, TSUNAGI.anonKey, {
   realtime: { params: { eventsPerSecond: 10 } },
 });
 
-const SHIFT_KINDS = {
-  early: { label: "早番", time: "9:00–17:00", color: "#f59e0b" },
-  late: { label: "遅番", time: "13:00–21:00", color: "#5b7cfa" },
-  full: { label: "通し", time: "9:00–21:00", color: "#8b5cf6" },
-  night: { label: "夜勤", time: "21:00–翌9:00", color: "#334155" },
-  remote: { label: "在宅", time: "9:00–18:00", color: "#14b8a6" },
-  off: { label: "休み", time: "", color: "#94a3b8" },
-};
 
 const localISO = ts => {
   if (!ts) return "";
@@ -396,8 +388,10 @@ const ROUTES = [
   ["DELETE", /^\/api\/events\/(\d+)$/, async ([id]) => must(await SB.from("events").delete().eq("id", id))],
 
   ["GET", /^\/api\/shifts$/, async (_, __, qs) => must(await SB.from("shifts").select("*").gte("date", qs.get("start")).lte("date", qs.get("end")))],
+  // シフトは「入る（開始〜終了）」か「休み」。kind が空なら消す
   ["PUT", /^\/api\/shifts$/, async (_, b) => b.kind
-    ? must(await SB.from("shifts").upsert({ team_id: team(), user_id: b.user_id, date: b.date, kind: b.kind, note: b.note || "" }, { onConflict: "user_id,date" }))
+    ? must(await SB.from("shifts").upsert({ team_id: team(), user_id: b.user_id, date: b.date, kind: b.kind, note: b.note || "",
+        start_time: b.kind === "work" ? b.start : null, end_time: b.kind === "work" ? b.end : null }, { onConflict: "user_id,date" }))
     : must(await SB.from("shifts").delete().eq("user_id", b.user_id).eq("date", b.date))],
 
   ["GET", /^\/api\/contacts$/, async (_, __, qs) => {
@@ -431,14 +425,14 @@ const ROUTES = [
     const today = todayStr();
     const [evs, working, mine, mail] = await Promise.all([
       SB.from("events").select("*").lte("start_at", today + "T99").gte("end_at", today).order("start_at").then(must),
-      SB.from("shifts").select("user_id,kind").eq("date", today).neq("kind", "off").then(must),
-      SB.from("shifts").select("kind").eq("date", today).eq("user_id", S.me.id).maybeSingle().then(must),
+      SB.from("shifts").select("user_id,kind,start_time,end_time").eq("date", today).eq("kind", "work").order("start_time").then(must),
+      SB.from("shifts").select("kind,start_time,end_time").eq("date", today).eq("user_id", S.me.id).maybeSingle().then(must),
       SB.from("emails").select(MAIL_SEL).eq("direction", "in").eq("archived", false).neq("status", "done")
         .or(`assignee_id.eq.${S.me.id},assignee_id.is.null`).order("date", { ascending: false }).limit(20).then(must),
     ]);
     const mx = (await mailExtras(mail)).filter(m => m.assignee_id === S.me.id || !m.read_by_me).slice(0, 6);
     const attention = S.channels.filter(c => c.unread && !c.muted).sort((a, b) => (b.mentions > 0) - (a.mentions > 0) || (b.last_at || "").localeCompare(a.last_at || ""));
-    return { attention: attention.slice(0, 8), events: evs.map(e => ({ ...e, start: e.start_at, end: e.end_at })), working, my_shift: mine ? mine.kind : "", mail: mx };
+    return { attention: attention.slice(0, 8), events: evs.map(e => ({ ...e, start: e.start_at, end: e.end_at })), working, my_shift: mine || null, mail: mx };
   }],
   ["GET", /^\/api\/search$/, async (_, __, qs) => {
     const l = pgLike(qs.get("q") || "");

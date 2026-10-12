@@ -201,7 +201,7 @@ function emojiPicker(anchor, pick) {
 
 /* ---------- 起動・認証・リアルタイム ---------- */
 async function boot() {
-  S.cfg = { shift_kinds: SHIFT_KINDS, mail: { configured: false, address: "" }, max_upload_mb: TSUNAGI.maxUploadMB, team: "つなぎ" };
+  S.cfg = { mail: { configured: false, address: "" }, max_upload_mb: TSUNAGI.maxUploadMB, team: "つなぎ" };
   const { data: { session } } = await SB.auth.getSession();
   if (!session) return renderLogin();
   const { data: me } = await SB.from("profiles").select("*").eq("id", session.user.id).maybeSingle();
