@@ -76,6 +76,8 @@ const UI = {
     try { const d = await api("/api/mail?box=inbox"); const m = d.items.filter(x => !x.read_by_me).length; const mb = $('[data-tab="mail"] .badge'); mb.hidden = !m; mb.textContent = m; } catch { }
   },
 
+  openRepo(path) { repoState.q = ""; repoState.current = path; openRepoFile(path); },
+
   goto(kind) {
     if (kind === "calendar") { this.planView = "calendar"; return this.go("plan"); }
     if (kind === "tasks") return this.push("タスク", el => renderTasks(el));
@@ -135,6 +137,7 @@ const UI = {
     const main = $("#main");
     const items = [["people", "連絡先", "チーム・社外の連絡先とプロフィール", () => this.push("連絡先", el => renderPeople(el))],
       ["file", "ファイル", "共有された資料をまとめて見る", () => this.push("ファイル", el => renderFiles(el, { mobile: true }))],
+      ["book", "リポジトリ", "会社の資料をさがす・読む", () => this.push("リポジトリ", el => renderRepo(el, { mobile: true }))],
       ["task", "タスク", "チームのタスクと自分のタスクバスター", () => this.push("タスク", el => renderTasks(el))],
       ["user", "プロフィール", "表示名・状態・連絡先・パスワード", () => editProfile()],
       ...(S.me.role === "admin" ? [["info", "管理", "招待コード・メンバー・共有 Gmail・書き出し", () => this.push("管理", el => renderAdmin(el))]] : [])];

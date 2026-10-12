@@ -1,5 +1,5 @@
 "use strict";
-const NAV = [["home", "ホーム", "home"], ["chat", "チャット", "chat"], ["mail", "メール", "mail"], ["calendar", "予定", "cal"], ["shifts", "シフト", "shift"], ["people", "連絡先", "people"], ["files", "ファイル", "file"], ["tasks", "タスク", "task"]];
+const NAV = [["home", "ホーム", "home"], ["chat", "チャット", "chat"], ["mail", "メール", "mail"], ["calendar", "予定", "cal"], ["shifts", "シフト", "shift"], ["people", "連絡先", "people"], ["files", "ファイル", "file"], ["tasks", "タスク", "task"], ["repo", "リポジトリ", "book"]];
 const LOGO = `<img class="logo brand-owl" src="img/favicon-64.png" alt="つなぎ" width="42" height="42">`;
 
 const UI = {
@@ -100,6 +100,7 @@ const UI = {
   save() { try { localStorage.setItem("tsunagi_pc", JSON.stringify({ section: this.section, cid: S.cur })); } catch { } },
 
   goto(kind) { this.go(kind); },
+  openRepo(path) { repoState.current = path; repoState.q = ""; this.go("repo"); },
 
   go(section, arg) {
     if (section === "chat") {
@@ -111,14 +112,17 @@ const UI = {
     if (S.chatOff) { S.chatOff(); S.chatOff = null; }
     S.cur = section === "chat" ? S.cur : null;
     $$(".rail-btn").forEach(b => b.classList.toggle("on", b.dataset.go === section));
+    // メールとリポジトリは画面自体に一覧があるので、チャンネル一覧は一時的に隠す（保存した開閉設定は変えない）
+    $(".app").classList.toggle("own-list", ["mail", "repo"].includes(section));
     const main = $("#main"); main.className = "main"; main.scrollTop = 0;
-    const r = { home: renderHome, mail: el => renderMail(el), calendar: el => renderCalendar(el), shifts: el => renderShifts(el), people: renderPeople, files: el => renderFiles(el), tasks: el => renderTasks(el), admin: renderAdmin }[section];
+    const r = { home: renderHome, mail: el => renderMail(el), calendar: el => renderCalendar(el), shifts: el => renderShifts(el), people: renderPeople, files: el => renderFiles(el), tasks: el => renderTasks(el), repo: el => renderRepo(el), admin: renderAdmin }[section];
     r && r(main, arg);
     this.drawSide(); this.save();
   },
 
   openChannel(cid) {
     this.section = "chat";
+    $(".app").classList.remove("own-list");
     if (S.screenOff) { S.screenOff(); S.screenOff = null; }
     $$(".rail-btn").forEach(b => b.classList.toggle("on", b.dataset.go === "chat"));
     const main = $("#main"); main.className = "main chat-mode";

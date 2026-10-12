@@ -8,7 +8,7 @@
 <title>つなぎ</title>
 <meta name="robots" content="noindex,nofollow">
 <meta name="referrer" content="no-referrer">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://fgqmbgmukyvgonzczsgh.supabase.co; media-src 'self' blob: https://fgqmbgmukyvgonzczsgh.supabase.co; frame-src https://fgqmbgmukyvgonzczsgh.supabase.co; connect-src 'self' https://fgqmbgmukyvgonzczsgh.supabase.co wss://fgqmbgmukyvgonzczsgh.supabase.co; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://fgqmbgmukyvgonzczsgh.supabase.co; media-src 'self' blob: https://fgqmbgmukyvgonzczsgh.supabase.co; frame-src blob: https://fgqmbgmukyvgonzczsgh.supabase.co; connect-src 'self' https://fgqmbgmukyvgonzczsgh.supabase.co wss://fgqmbgmukyvgonzczsgh.supabase.co; object-src 'none'; base-uri 'self'; form-action 'self'">
 <link rel="icon" href="img/favicon-64.png" type="image/png">
 <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
 <link rel="manifest" href="manifest.webmanifest">
@@ -127,6 +127,9 @@
   .chip { height: 32px; }
   /* 混雑を減らす: スマホでは補助的な要素を隠し、横に並ぶものは 1 行スクロールに */
   .hide-m { display: none !important; }
+  .repo-head { padding: 4px 16px 6px; } .repo-search { padding: 0 16px 10px; } .repo-search .ico-in { left: 28px; top: 11px; }
+  .repo-list { padding: 0 8px 24px; } .rt-row { min-height: 40px; font-size: 14.5px; }
+  .m-push .repo-file .rf-head { padding: 10px 14px; } .m-push .rf-body { min-height: 60vh; } .m-push .doc-page { padding: 22px 18px; margin: 0; border-radius: 0; box-shadow: none; }
   .shift-legend { display: none !important; }
   .page-head h1.keep-title { display: block; font-size: 19px; margin: 0 4px 0 0; }
   .kind-chips, .tt-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-left: -16px; margin-right: -16px; padding: 0 16px 4px; }
@@ -154,6 +157,7 @@
 <script src="gestures.js"></script>
 <script src="data.js"></script>
 <script src="screens.js"></script>
+<script src="repo.js"></script>
 <script src="m.js"></script>
 </body>
 </html>

@@ -194,10 +194,13 @@ function parseCSV(text, sep) {
   return rows;
 }
 async function previewFile(f) {
-  const ext = (f.name.split(".").pop() || "").toLowerCase();
   const res = await fetch(await fileUrl(f));
   if (!res.ok) throw new Error("ファイルを読み込めませんでした");
-  const buf = await res.arrayBuffer();
+  return previewBuffer(await res.arrayBuffer(), f);
+}
+/** バイト列から表示用の構造を作る。f は { name, kind, mime } だけを使う。 */
+async function previewBuffer(buf, f) {
+  const ext = (f.name.split(".").pop() || "").toLowerCase();
   if (ext === "docx") {
     const doc = await (await unzip(buf)).xml("word/document.xml");
     const blocks = byTag(doc, "p").map(p => {

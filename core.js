@@ -42,6 +42,7 @@ const P = {
   chev: '<path d="m9 6 6 6-6 6"/>',
   chevl: '<path d="m15 6-6 6 6 6"/>',
   check: '<path d="m5 12 5 5 9-10"/>',
+  book: '<path d="M5 4h10a4 4 0 0 1 4 4v12H9a4 4 0 0 1-4-4z"/><path d="M5 16a4 4 0 0 1 4-4h10"/>',
   panel: '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/>',
   filter: '<path d="M4 6h16M7 12h10M10 18h4"/>',
   bell: '<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/>',
@@ -365,6 +366,9 @@ function msgHTML(m, prev, ch, memberIds) {
       ? `<img class="att-img" data-fsrc="${esc(f.path)}" alt="${esc(f.name)}" loading="lazy" data-file="${f.id}">`
       : `<button class="file-card" data-file="${f.id}">${fileIcon(f)}<span class="file-meta"><div class="file-name">${esc(f.name)}</div><div class="file-sub">${KIND_NAME[f.kind]} · ${fmtSize(f.size)} · クリックでプレビュー</div></span></button>`).join("")}</div>`;
   }
+  if (m.meta && m.meta.kind === "repo") {
+    body += `<div class="mini-card" data-repo="${esc(m.meta.path)}" style="border-left-color:#24292f"><div class="k">${icon("book")} リポジトリの資料</div><div class="t">${esc(m.meta.name)}</div><div class="s">${esc(m.meta.path)}</div></div>`;
+  }
   if (m.meta && m.meta.kind === "email") {
     body += `<div class="mini-card" data-mail="${m.meta.id}"><div class="k">${icon("mail")} 共有されたメール</div><div class="t">${esc(m.meta.subject)}</div><div class="s">${esc(m.meta.from_name)} — ${esc(m.meta.snippet)}</div></div>`;
   }
@@ -486,6 +490,7 @@ async function renderChat(el, cid) {
     if (t.closest("[data-older]")) return loadOlder();
     if (t.closest("[data-file]")) { const f = m.files.find(x => x.id === +t.closest("[data-file]").dataset.file); return openViewer(f, m.files); }
     if (t.closest("[data-mail]")) return UI.openMail(+t.closest("[data-mail]").dataset.mail);
+    if (t.closest("[data-repo]")) return UI.openRepo(t.closest("[data-repo]").dataset.repo);
     if (t.closest("[data-user]")) return showProfile(t.closest("[data-user]").dataset.user);
     if (t.closest("[data-jump]")) { const n = $(`.msg[data-id="${t.closest("[data-jump]").dataset.jump}"]`, list); if (n) { n.scrollIntoView({ block: "center", behavior: "smooth" }); n.classList.add("flash"); setTimeout(() => n.classList.remove("flash"), 1700); } return; }
     if (!m) return;
@@ -713,6 +718,15 @@ async function openViewer(f, list = []) {
   if (f.kind === "audio") { st.innerHTML = `<div style="padding:40px;width:min(560px,100%)"><div class="row" style="margin-bottom:16px">${fileIcon(f)}<b>${esc(f.name)}</b></div><audio src="${esc(url)}" controls style="width:100%"></audio></div>`; return; }
   let p;
   try { p = await previewFile(f); } catch (e) { st.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+  const plain = paintPreview(st, p, f, dl);
+  if (plain) {
+    const b = $("[data-claude]", extra); b.hidden = false;
+    b.onclick = () => openClaude(`ファイル「${f.name}」の内容です。要点をまとめてください。\n\n${plain.slice(0, 1500)}`);
+  }
+}
+
+/** previewBuffer の結果を st に描く。Claude に渡す用の素のテキストを返す。 */
+function paintPreview(st, p, f, dl) {
   st.classList.remove("center");
   let plain = "";
   if (p.type === "text") { st.innerHTML = `<pre class="code-view">${esc(p.text)}</pre>`; plain = p.text; }
@@ -733,10 +747,7 @@ async function openViewer(f, list = []) {
     plain = p.slides.map((s, i) => `[${i + 1}] ${s.title}\n${s.lines.join("\n")}`).join("\n\n");
   } else if (p.type === "list") { st.innerHTML = `<pre class="code-view">${esc(p.items.join("\n"))}</pre>`; }
   else { st.classList.add("center"); st.innerHTML = `<div class="empty">${fileIcon(f)}<b style="margin-top:12px">${esc(f.name)}</b>${esc(p.reason || "")}<div style="margin-top:14px"><a class="btn primary" href="${esc(dl)}" target="_blank" rel="noopener">${icon("dl")} ダウンロード</a></div></div>`; }
-  if (plain) {
-    const b = $("[data-claude]", extra); b.hidden = false;
-    b.onclick = () => openClaude(`ファイル「${f.name}」の内容です。要点をまとめてください。\n\n${plain.slice(0, 1500)}`);
-  }
+  return plain;
 }
 
 /* ---------- プロフィール ---------- */

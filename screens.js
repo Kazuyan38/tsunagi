@@ -731,6 +731,7 @@ async function renderAdmin(el) {
       <section class="card admin-card" data-k="invites"><h2>招待コード</h2><p class="desc">新規登録とログインの両方に必要です。漏れたら「無効にする」で即座に締め出せます（既存メンバーには新しいコードを伝えてください）。</p><div class="body"></div></section>
       <section class="card admin-card" data-k="members"><h2>メンバー</h2><p class="desc">利用停止にすると、その人はすぐにどのデータも読めなくなります（データは残ります）。</p><div class="body"></div></section>
       <section class="card admin-card" data-k="mail"><h2>共有 Gmail</h2><p class="desc">Gmail の 2 段階認証を有効にし、アプリパスワード（16 桁）を発行して入力します。パスワードはサーバにだけ保存され、画面には二度と表示されません。</p><div class="body"></div></section>
+      <section class="card admin-card" data-k="repo"><h2>GitHub リポジトリ</h2><p class="desc">会社の資料リポジトリを「リポジトリ」画面で読めるようにします。<b>読み取り専用</b>の Fine-grained トークン（対象リポジトリだけ・Contents: Read-only）を使ってください。トークンはサーバにだけ保存され、画面には二度と表示されません。</p><div class="body"></div></section>
       <section class="card admin-card" data-k="team"><h2>チームとデータ</h2><p class="desc">チーム名の変更と、データの書き出し（バックアップ）。</p><div class="body"></div></section>
       <section class="card admin-card" data-k="audit" style="grid-column:1/-1"><h2>監査ログ</h2><p class="desc">誰がいつ何をしたか（直近 100 件）。</p><div class="body"></div></section>
     </div></div>`;
@@ -782,6 +783,27 @@ async function renderAdmin(el) {
     const c = $("[data-mailclear]", el);
     if (c) c.onclick = async () => { if (await confirmBox("共有 Gmail の接続を解除しますか？（取り込み済みのメールは残ります）", "解除", true)) { await fn("mail", { action: "clear_config" }); mail(); audit(); } };
   };
+  const repoBox = async () => {
+    const st = must(await SB.rpc("repo_status"));
+    const fmt = ts => ts ? `${fmtDay(localISO(ts))} ${fmtTime(localISO(ts))}` : "—";
+    box("repo").innerHTML = `${st.configured ? `<p style="margin:0 0 10px"><span style="color:var(--ok)">● 接続中</span> ${esc(st.repo)}${st.branch ? `（${esc(st.branch)}）` : ""}<br><span class="small muted">索引 ${st.docs} 件・本文あり ${st.with_text} 件・更新 ${fmt(st.indexed_at)}${st.error ? ` · <span style="color:var(--danger)">${esc(st.error)}</span>` : ""}</span></p>` : '<p class="small" style="margin:0 0 10px">○ 未設定</p>'}
+      <form class="row wrap" style="gap:8px" data-repocfg>
+        <input class="input grow" name="repo" placeholder="持ち主/リポジトリ名" value="${esc(st.repo || "Kazuyan38/our-company-work-place")}" autocomplete="off" style="min-width:220px">
+        <input class="input" name="branch" placeholder="ブランチ（空なら既定）" value="${esc(st.branch || "")}" style="width:180px">
+        <input class="input grow" name="token" type="password" placeholder="github_pat_…（読み取り専用）" autocomplete="new-password" style="min-width:220px">
+        <button class="btn primary">確認して保存</button>
+        ${st.configured ? `<button type="button" class="btn danger" data-repoclear>切断</button>` : ""}</form>
+      <details class="small muted" style="margin-top:8px"><summary>トークンの作り方</summary>GitHub → Settings → Developer settings → Fine-grained tokens → Generate new token。Repository access で対象のリポジトリだけを選び、Permissions の Contents を Read-only にします（ほかは No access のまま）。</details>`;
+    $("[data-repocfg]", el).onsubmit = async e => {
+      e.preventDefault(); const f = e.target, b = $("button.primary", f); b.disabled = true; b.textContent = "GitHub に接続中…";
+      try {
+        await repoCall({ action: "set_config", repo: f.repo.value, branch: f.branch.value, token: f.token.value });
+        toast("リポジトリをつなぎました。リポジトリ画面を開くと検索の索引を作ります"); repoBox(); audit();
+      } catch (er) { fail(er); b.disabled = false; b.textContent = "確認して保存"; }
+    };
+    const c = $("[data-repoclear]", el);
+    if (c) c.onclick = async () => { if (await confirmBox("リポジトリの接続を解除しますか？（検索の索引も消えます）", "解除", true)) { await repoCall({ action: "clear_config" }); repoBox(); audit(); } };
+  };
   const teamBox = async () => {
     box("team").innerHTML = `<form class="row" style="gap:8px;margin-bottom:14px" data-rename><input class="input grow" name="name" value="${esc(S.cfg.team)}"><button class="btn">名前を変更</button></form>
       <button class="btn primary" data-export>${icon("dl")} チームのデータを書き出す（JSON）</button>
@@ -792,7 +814,7 @@ async function renderAdmin(el) {
   const audit = async () => {
     const rows = must(await SB.from("audit_log").select("*").order("at", { ascending: false }).limit(100));
     const L = { "invite.create": "招待コードを発行", "invite.revoke": "招待コードを無効化", "member.register": "新規登録", "member.role": "権限を変更", "member.deactivate": "利用停止",
-      "member.reactivate": "利用再開", "member.reset_password": "仮パスワードを発行", "mail.configure": "共有 Gmail を設定", "mail.disconnect": "共有 Gmail を切断", "team.rename": "チーム名を変更", "data.export": "データを書き出し" };
+      "member.reactivate": "利用再開", "member.reset_password": "仮パスワードを発行", "mail.configure": "共有 Gmail を設定", "mail.disconnect": "共有 Gmail を切断", "team.rename": "チーム名を変更", "data.export": "データを書き出し", "repo.configure": "リポジトリを接続", "repo.disconnect": "リポジトリを切断" };
     box("audit").innerHTML = rows.length ? `<table class="tbl"><tbody>${rows.map(r => `<tr><td class="small" style="white-space:nowrap">${fmtTs(r.at)}</td><td>${esc(r.actor_id ? U(r.actor_id).name : "—")}</td>
       <td>${esc(L[r.action] || r.action)}</td><td class="small muted hide-sm">${esc(Object.entries(r.detail || {}).map(([k, v]) => `${k}: ${v}`).join(" / "))}</td></tr>`).join("")}</tbody></table>` : '<p class="small muted">まだ記録はありません</p>';
   };
@@ -818,7 +840,7 @@ async function renderAdmin(el) {
     const r = e.target.closest("[data-role]"); if (!r) return;
     try { await fn("admin", { action: "set_role", user_id: r.dataset.role, role: r.value }); toast("権限を変更しました"); audit(); } catch (er) { fail(er); members(); }
   };
-  await Promise.all([invites(), members(), mail(), teamBox(), audit()]);
+  await Promise.all([invites(), members(), mail(), repoBox(), teamBox(), audit()]);
 }
 
 async function exportData() {
@@ -861,13 +883,17 @@ function openSwitcher() {
       items.push(...remote.messages.map(m => ({ html: `${icon("chat")}<span class="grow" style="min-width:0"><div class="ellipsis">${esc(m.body)}</div><div class="small muted">${esc(U(m.user_id).name)} · ${esc(chName(S.channels.find(c => c.id === m.channel_id)))} · ${fmtRel(m.created_at)}</div></span>`, go: () => UI.openChannel(m.channel_id) })));
       items.push(...remote.files.map(f => ({ html: `${fileIcon(f)}<span class="grow ellipsis">${esc(f.name)}</span>`, go: () => openViewer(f) })));
       items.push(...remote.mail.map(m => ({ html: `${icon("mail")}<span class="grow" style="min-width:0"><div class="ellipsis">${esc(m.subject)}</div><div class="small muted">${esc(m.from_name)} · ${fmtRel(m.date)}</div></span>`, go: () => UI.openMail(m.id) })));
+      items.push(...(remote.repo || []).map(r => ({ html: `${icon("book")}<span class="grow" style="min-width:0"><div class="ellipsis">${esc(r.name)}</div><div class="small muted ellipsis">${esc(r.snippet || r.path)}</div></span>`, go: () => UI.openRepo(r.path) })));
       items.push(...remote.contacts.map(c => ({ html: `${icon("user")}<span class="grow">${esc(c.name)} <span class="small muted">${esc(c.company)}</span></span>`, go: () => showContact(c, () => { }) })));
     }
     idx = Math.min(idx, Math.max(items.length - 1, 0));
     res.innerHTML = items.length ? items.map((it, i) => `<button class="li${i === idx ? " sel" : ""}" data-i="${i}" style="border-radius:10px;border:0">${it.html}</button>`).join("") : `<div class="empty">見つかりませんでした</div>`;
   };
   const pick = i => { const it = items[i]; if (it) { ov.close(); it.go(); } };
-  input.oninput = () => { idx = 0; render(); clearTimeout(qt); const q = input.value.trim(); if (q.length >= 1) qt = setTimeout(() => api(`/api/search?q=${encodeURIComponent(q)}`).then(r => input.value.trim() === q && render(r)), 220); };
+  input.oninput = () => { idx = 0; render(); clearTimeout(qt); const q = input.value.trim(); if (q.length >= 1) qt = setTimeout(async () => {
+      const [r, rp] = await Promise.all([api(`/api/search?q=${encodeURIComponent(q)}`), SB.rpc("repo_search", { q, lim: 5 }).then(x => x.data || [], () => [])]);
+      if (input.value.trim() === q) render({ ...r, repo: rp });
+    }, 220); };
   input.onkeydown = e => {
     if (e.key === "ArrowDown") { idx = Math.min(idx + 1, items.length - 1); $$(".li", res).forEach((b, i) => b.classList.toggle("sel", i === idx)); $$(".li", res)[idx]?.scrollIntoView({ block: "nearest" }); e.preventDefault(); }
     if (e.key === "ArrowUp") { idx = Math.max(idx - 1, 0); $$(".li", res).forEach((b, i) => b.classList.toggle("sel", i === idx)); $$(".li", res)[idx]?.scrollIntoView({ block: "nearest" }); e.preventDefault(); }

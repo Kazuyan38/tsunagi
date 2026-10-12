@@ -6,7 +6,7 @@
 <title>つなぎ</title>
 <meta name="robots" content="noindex,nofollow">
 <meta name="referrer" content="no-referrer">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://fgqmbgmukyvgonzczsgh.supabase.co; media-src 'self' blob: https://fgqmbgmukyvgonzczsgh.supabase.co; frame-src https://fgqmbgmukyvgonzczsgh.supabase.co; connect-src 'self' https://fgqmbgmukyvgonzczsgh.supabase.co wss://fgqmbgmukyvgonzczsgh.supabase.co; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://fgqmbgmukyvgonzczsgh.supabase.co; media-src 'self' blob: https://fgqmbgmukyvgonzczsgh.supabase.co; frame-src blob: https://fgqmbgmukyvgonzczsgh.supabase.co; connect-src 'self' https://fgqmbgmukyvgonzczsgh.supabase.co wss://fgqmbgmukyvgonzczsgh.supabase.co; object-src 'none'; base-uri 'self'; form-action 'self'">
 <link rel="icon" href="img/favicon-64.png" type="image/png">
 <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
 <link rel="stylesheet" href="core.css">
@@ -15,8 +15,9 @@
   body.is-login { overflow: auto; }
   .app { display: grid; grid-template-columns: 76px 264px minmax(0, 1fr); height: 100vh; transition: grid-template-columns .22s cubic-bezier(.2,.8,.2,1); }
   /* サイドバーを畳んだ状態: レールだけ残し、本文を広く使う */
-  .app.collapsed { grid-template-columns: 76px 0 minmax(0, 1fr); }
-  .app.collapsed .side { visibility: hidden; border-right: 0; }
+  .app.collapsed, .app.own-list { grid-template-columns: 76px 0 minmax(0, 1fr); }
+  .app.collapsed .side, .app.own-list .side { visibility: hidden; border-right: 0; }
+  .app.own-list .rail-toggle { visibility: hidden; }
   .side { overflow: hidden; }
   .rail-toggle { width: 40px; height: 34px; border-radius: 10px; display: grid; place-items: center; color: var(--muted); margin: -4px 0 8px; }
   .rail-toggle:hover { background: var(--bg-2); color: var(--ink); }
@@ -85,6 +86,7 @@
 <script src="gestures.js"></script>
 <script src="data.js"></script>
 <script src="screens.js"></script>
+<script src="repo.js"></script>
 <script src="pc.js"></script>
 </body>
 </html>
