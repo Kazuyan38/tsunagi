@@ -2,6 +2,8 @@
 "use strict";
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", e => e.waitUntil(self.clients.claim()));
+// 何もしない（respondWith しない＝ふつうに通信する。キャッシュもしない）。アプリとして追加できる条件に fetch の受け口が要るブラウザがあるため
+self.addEventListener("fetch", () => { });
 
 const SAFARI = /Safari/.test(self.navigator.userAgent) && !/Chrome|Chromium|Edg|Android/.test(self.navigator.userAgent);
 

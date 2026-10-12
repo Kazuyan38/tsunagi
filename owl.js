@@ -53,24 +53,52 @@ function owlHop(el) {
   el.addEventListener("animationend", () => el.classList.remove("hop"), { once: true });   // 跳ね終わったら浮遊に戻す
 }
 
-/* ---------- アプリとしてインストール（デスクトップ・ホーム画面に追加） ---------- */
-const OWL_INSTALL = { evt: null };
-addEventListener("beforeinstallprompt", e => { e.preventDefault(); OWL_INSTALL.evt = e; });
-addEventListener("appinstalled", () => { OWL_INSTALL.evt = null; if (typeof toast === "function") toast("インストールしました"); });
+/* ---------- アプリとしてインストール（デスクトップ・ホーム画面に追加） ----------
+ * Edge・Chrome は beforeinstallprompt で「追加」を呼べる。できない端末（Firefox・Safari など）には手順を案内する（.url ファイルの配布は、ブラウザが危険な種類として警告するのでしない）。 */
+const OWL_INSTALL = { evt: null, started: false };
+const OWL_NUDGE_KEY = "tsunagi_install_nudge";
+addEventListener("beforeinstallprompt", e => { e.preventDefault(); OWL_INSTALL.evt = e; if (OWL_INSTALL.started) owlInstallNudge(); });
+addEventListener("appinstalled", () => {
+  OWL_INSTALL.evt = null; owlNudgeRemember(); const b = document.getElementById("owlInstallBar"); if (b) b.remove();
+  if (typeof toast === "function") toast("インストールしました");
+});
 const owlStandalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const owlWhere = () => (UI.isMobile ? "ホーム画面" : "デスクトップ");
+function owlNudgeRemember() { try { localStorage.setItem(OWL_NUDGE_KEY, String(Date.now())); } catch { } }
+
 /** プロフィールに出す「アプリとして追加」の行。すでにアプリとして開いていれば何も出さない */
 function owlInstallRow() {
   if (owlStandalone()) return "";
-  const where = UI.isMobile ? "ホーム画面" : "デスクトップ";
+  const where = owlWhere();
   const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const win = /Windows/.test(navigator.userAgent) && !UI.isMobile;
   const how = OWL_INSTALL.evt ? `<button class="btn sm primary" data-install>${icon("dl")} ${where}に追加</button>`
     : ios ? `<span class="small muted">Safari の共有ボタン →「ホーム画面に追加」</span>`
-    : `<span class="small muted">ブラウザのメニュー →「アプリとしてインストール」（Edge・Chrome）</span>`;
-  return `<div class="install-row"><div><b>${where}にアプリとして置く</b><div class="small muted">タブを探さず、アイコンから開けます。通知も届きます。</div></div>${how}</div>`;
+    : `<span class="small muted">Edge・Chrome: メニュー →「アプリとしてインストール」${win ? "<br>それ以外のブラウザ: アドレス欄の左のアイコンをデスクトップへドラッグ" : ""}</span>`;
+  return `<div class="install-row"><div><b>${where}にアプリとして置く</b><div class="small muted">タブを探さず、アイコンから開けます。通知も届きます。</div></div><div class="install-how">${how}</div></div>`;
 }
 async function owlInstall() {
   const e = OWL_INSTALL.evt; if (!e) return;
   e.prompt(); await e.userChoice.catch(() => { }); OWL_INSTALL.evt = null;
+}
+/** 本体の起動後に 1 回呼ぶ。追加できる状態のときだけ、画面の隅に小さな案内を出す（「あとで」なら 14 日出さない） */
+function owlInstallNudge() {
+  OWL_INSTALL.started = true;
+  if (!OWL_INSTALL.evt || owlStandalone() || document.getElementById("owlInstallBar")) return;
+  let t = 0; try { t = +localStorage.getItem(OWL_NUDGE_KEY) || 0; } catch { }
+  if (Date.now() - t < 14 * 864e5) return;
+  setTimeout(() => {
+    if (!OWL_INSTALL.evt || document.getElementById("owlInstallBar")) return;
+    const where = owlWhere();
+    const bar = document.createElement("div");
+    bar.id = "owlInstallBar"; bar.className = "install-bar" + (UI.isMobile ? " m" : ""); bar.setAttribute("role", "dialog"); bar.setAttribute("aria-label", "アプリとして追加");
+    bar.innerHTML = `<img src="img/icon-192.png" alt="" width="40" height="40"><div class="ib-t"><b>owl を${where}に置く</b><span>アイコンから開けて、通知も届きます</span></div>
+      <button class="btn primary sm" data-ibyes>追加する</button><button class="btn ghost sm" data-ibno>あとで</button>`;
+    document.body.appendChild(bar);
+    requestAnimationFrame(() => bar.classList.add("in"));
+    bar.querySelector("[data-ibyes]").onclick = async () => { bar.remove(); await owlInstall(); owlNudgeRemember(); };
+    bar.querySelector("[data-ibno]").onclick = () => { owlNudgeRemember(); bar.classList.remove("in"); setTimeout(() => bar.remove(), 250); };
+  }, 5000);
 }
 
 /* ---------- 起動画面 ---------- */

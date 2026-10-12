@@ -192,6 +192,7 @@ function initNotifs() {
   on("notif", loadNotifsSoon);
   loadNotifs().catch(() => { });
   if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("sw.js").catch(() => { });   // 全員が登録する（アプリとして追加できる条件。中身は通知の受け取りだけ）
     // 通知を押したとき、開いているタブがあればそこで開く（sw.js から届く）
     navigator.serviceWorker.addEventListener("message", e => { if (e.data && e.data.type === "open-notif" && e.data.id) openNotifById(+e.data.id); });
     // すでに許可済みの端末は、購読を今のログインに結び直す（鍵の更新・別の人がログインし直した場合）

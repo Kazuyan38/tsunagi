@@ -59,7 +59,7 @@ const UI = {
     on("ws", ok => { const c = $(".conn"); c.hidden = ok; c.classList.toggle("off", !ok); });
     on("mail", () => this.mailBadge()); on("mail_read", () => this.mailBadge());
     window.addEventListener("focus", () => { if (S.cur && this.section === "chat") { const c = S.cache[S.cur]; const m = c && c.messages[c.messages.length - 1]; if (m) markRead(S.cur, m.id); } });
-    this.drawMe(); this.drawSide(); this.mailBadge(); initNotifs();
+    this.drawMe(); this.drawSide(); this.mailBadge(); initNotifs(); owlInstallNudge();
     let last = {}; try { last = JSON.parse(localStorage.getItem("tsunagi_pc") || "{}"); } catch { }
     if (last.section === "chat" && S.channels.some(c => c.id === last.cid)) this.openChannel(last.cid); else this.go(last.section && last.section !== "chat" ? last.section : "home");
   },

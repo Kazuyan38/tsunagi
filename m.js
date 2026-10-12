@@ -35,7 +35,7 @@ const UI = {
     });
     this.badges();
     this.gestures();
-    initNotifs();
+    initNotifs(); owlInstallNudge();
     let last = "home"; try { last = sessionStorage.getItem("tsunagi_tab") || "home"; } catch { }
     this.go(last);
   },
