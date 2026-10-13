@@ -518,6 +518,7 @@ function connectWS() {
       if (st === "SUBSCRIBED") rtDb._was = true;
     });
   joinTeamRoom(true);
+  if (typeof OwlCall !== "undefined") OwlCall.init();
 }
 /** 在席と入力中。まず非公開チャンネル（RLS で同じチームだけ）を試し、使えなければ推測困難なトピック名の公開チャンネルに退避する。 */
 function joinTeamRoom(priv) {

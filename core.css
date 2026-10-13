@@ -876,3 +876,19 @@ input.switch:checked::after { transform: translateX(16px); }
 .rd-av { display: inline-flex; align-items: center; }
 .rd-av .avatar { margin-left: -4px; box-shadow: 0 0 0 1.5px var(--surface); } .rd-av .avatar:first-child { margin-left: 0; }
 .rd-av i { font-style: normal; font-size: 10.5px; margin-left: 3px; color: var(--muted); }
+
+/* ---------- 音声通話（call.js） ---------- */
+.call-wrap { position: fixed; right: 20px; bottom: 20px; z-index: 180; display: none; gap: 10px; width: min(420px, calc(100vw - 24px)); }
+.call-wrap.on { display: grid; }
+.call-card { display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--radius); box-shadow: var(--shadow-3); }
+.call-card.ring { border-color: var(--ok); animation: call-pulse 1.4s ease-in-out infinite; }
+.call-card .grow { min-width: 0; flex: 1; }
+.call-ttl { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.call-sub { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.call-ok { background: var(--ok); color: #fff; border-color: var(--ok); }
+.call-p { position: relative; border-radius: 50%; line-height: 0; }
+.call-p.on { box-shadow: 0 0 0 3px var(--ok); }
+.call-dot { position: absolute; right: -1px; bottom: -1px; width: 9px; height: 9px; border-radius: 50%; background: var(--warn); border: 2px solid var(--surface); }
+@keyframes call-pulse { 50% { box-shadow: 0 0 0 4px var(--ok-soft), var(--shadow-3); } }
+@media (max-width: 720px) { .call-wrap { right: 12px; left: 12px; bottom: auto; top: calc(env(safe-area-inset-top, 0px) + 10px); width: auto; } }
+@media (prefers-reduced-motion: reduce) { .call-card.ring { animation: none; } }

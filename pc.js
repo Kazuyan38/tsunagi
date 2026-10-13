@@ -158,8 +158,10 @@ const UI = {
     head.innerHTML = `${chIcon(ch, 28)}<span class="ttl">${esc(isCh ? ch.name : chName(ch))}</span>
       <span class="topic">${isCh ? esc(ch.topic || "") : dmUser ? (S.online.has(dmUser.id) ? '<span style="color:var(--ok)">● オンライン</span>' : "オフライン") + (dmUser.status_text ? " · " + esc(dmUser.status_emoji + " " + dmUser.status_text) : "") : `${members.length} 人のグループ`}</span>
       <button class="btn ghost sm" data-info title="メンバー・設定"><span class="avatars">${members.slice(0, 3).map(i => avatar(U(i), 22, false)).join("")}</span> ${members.length}</button>
+      ${callButton(data, "btn ghost icon")}
       <button class="btn ghost icon" data-taskall title="このチャンネルからタスク登録">${icon("task")}</button>
       <button class="btn claude sm" data-askclaude>${CLAUDE_MARK} 要約を Claude に</button>`;
+    const callBtn = $("[data-call]", head); if (callBtn) callBtn.onclick = () => OwlCall.start(ch.id);
     $("[data-info]", head).onclick = () => channelInfo({ ...ch, member_ids: members });
     $("[data-taskall]", head).onclick = () => taskFromText("", `${chName(ch)}`);
     $("[data-askclaude]", head).onclick = () => {

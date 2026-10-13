@@ -200,8 +200,10 @@ const UI = {
     const other = !isCh && members.length === 2 ? U(members.find(i => i !== S.me.id)) : null;
     head.innerHTML = `<button class="icon-btn" data-back aria-label="戻る">${icon("back")}</button>${chIcon(ch, 32)}
       <div class="ttl" style="margin-left:6px"><div class="ellipsis">${esc(chName(ch))}</div><div class="sub ellipsis">${isCh ? `${members.length} 人${ch.topic ? " · " + esc(ch.topic) : ""}` : other ? (S.online.has(other.id) ? '<span style="color:var(--ok)">● オンライン</span>' : "オフライン") : `${members.length} 人`}</div></div>
+      ${callButton(data, "icon-btn")}
       <button class="icon-btn" data-sum aria-label="Claude で要約" style="color:#c15f33">${CLAUDE_MARK}</button>
       <button class="icon-btn" data-info aria-label="情報">${icon("info")}</button>`;
+    const callBtn = $("[data-call]", head); if (callBtn) callBtn.onclick = () => OwlCall.start(ch.id);
     $("[data-back]", head).onclick = () => history.back();
     $("[data-info]", head).onclick = () => channelInfo({ ...ch, member_ids: members });
     $("[data-sum]", head).onclick = () => {
