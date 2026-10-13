@@ -10,7 +10,7 @@ const CALL_ICE = [{ urls: "stun:stun.cloudflare.com:3478" }];
 const OwlCall = (() => {
   let cur = null;                 // 参加中の通話 { id, cid, peers: Map, stream, muted, t0, state, ids }
   const ringing = new Map();      // 着信中 call_id -> { cid, from, ids, accepted:Set, timer }
-  let started = false, ui = null, tick = null;
+  let started = false, recoveringRings = false, ringRecovery = null, deferredRingDeletes = new Set(), ui = null, tick = null;
 
   const send = async (cid, callId, toIds, kind, payload = {}) => {
     const rows = toIds.filter(id => id !== S.me.id).map(to => ({ channel_id: cid, call_id: callId, to_user: to, kind, payload }));
@@ -161,7 +161,10 @@ const OwlCall = (() => {
 
   /* ---------------- 受信 ---------------- */
   const onSignal = async row => {
-    SB.from("call_signals").delete().eq("id", row.id).then(() => {}, () => {});
+    // 起動時の回収が終わるまでは ring を消さない。push から開いた場合でも
+    // Realtime と catch-up query の競合で着信カードが失われないようにする。
+    if (row.kind === "ring" && recoveringRings) deferredRingDeletes.add(row.id);
+    else SB.from("call_signals").delete().eq("id", row.id).then(() => {}, () => {});
     if (Date.now() - new Date(row.created_at).getTime() > 90000) return;       // 古い手順は無視
     const { call_id: id, from_user: from, kind, payload: pl = {} } = row;
     if (kind === "ring") {
@@ -210,11 +213,36 @@ const OwlCall = (() => {
   };
 
   /* ---------------- 起動 ---------------- */
+  const recoverRings = async () => {
+    if (!S.me) return;
+    if (ringRecovery) return ringRecovery;
+    recoveringRings = true;
+    ringRecovery = (async () => {
+      try {
+        // call_signals の RLS でも宛先本人だけ読める。期限内の未処理 ring だけを復元。
+        const since = new Date(Date.now() - 90000).toISOString();
+        const { data, error } = await SB.from("call_signals")
+          .select("id, channel_id, call_id, from_user, to_user, kind, payload, created_at")
+          .eq("kind", "ring").gte("created_at", since).order("id").limit(20);
+        if (error) throw error;
+        for (const row of data || []) await onSignal(row);
+      } catch (e) { console.warn("call ring recovery", e); }
+      finally {
+        recoveringRings = false; ringRecovery = null;
+        const ids = [...deferredRingDeletes]; deferredRingDeletes.clear();
+        if (ids.length) SB.from("call_signals").delete().in("id", ids).then(() => {}, () => {});
+      }
+    })();
+    return ringRecovery;
+  };
   const init = () => {
     if (started || !S.me || typeof RTCPeerConnection === "undefined") return; started = true;
     SB.channel("tsunagi-calls")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "call_signals", filter: `to_user=eq.${S.me.id}` }, p => { onSignal(p.new).catch(e => console.warn("call", e)); })
-      .subscribe();
+      .subscribe(status => { if (status === "SUBSCRIBED") recoverRings(); });
+    if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", e => {
+      if (e.data?.type === "open-call") recoverRings();
+    });
     window.addEventListener("beforeunload", () => { if (cur) end(); });
   };
   return { init, start: cid => start(cid).catch(fail), busy: () => !!cur, available: () => typeof RTCPeerConnection !== "undefined" };

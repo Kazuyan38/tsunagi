@@ -19,18 +19,24 @@ self.addEventListener("push", e => {
     }
     await self.registration.showNotification(d.title || "owl", {
       body: d.body || "", tag: d.tag || undefined, renotify: !!d.tag, icon: "img/icon-192.png", badge: "img/favicon-64.png",
-      data: { id: d.id || null, url: d.url || "./" },
+      ...(d.kind === "call" ? { vibrate: [250, 100, 250, 100, 400] } : {}),
+      data: { id: d.id || null, url: d.url || "./", kind: d.kind || null, signal_id: d.signal_id || null },
     });
   })());
 });
 
 self.addEventListener("notificationclick", e => {
   e.notification.close();
-  const { id, url } = e.notification.data || {};
+  const { id, url, kind, signal_id } = e.notification.data || {};
   e.waitUntil((async () => {
     const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
     const w = wins.find(c => /\/(pc|m)\.html/.test(c.url));
-    if (w) { await w.focus(); if (id) w.postMessage({ type: "open-notif", id }); return; }
+    if (w) {
+      await w.focus();
+      if (id) w.postMessage({ type: "open-notif", id });
+      if (kind === "call") w.postMessage({ type: "open-call", signal_id });
+      return;
+    }
     await self.clients.openWindow(new URL(url || "./", self.registration.scope).href);
   })());
 });
