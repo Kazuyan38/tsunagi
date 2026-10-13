@@ -18,7 +18,7 @@ const UI = {
         ${[...NAV, ...(S.me.role === "admin" ? [["admin", "管理", "user"]] : [])].map(([k, l, i]) => `<button class="rail-btn" data-go="${k}" title="${l}">${icon(i)}<span>${l}</span><span class="badge" hidden></span></button>`).join("")}
         <span class="sp"></span>
         <button class="rail-btn" data-bell title="通知" aria-label="通知">${icon("bell")}<span>通知</span><span class="badge alert" hidden></span></button>
-        <button class="claude-btn" data-claude title="Claude を開く（新しいタブ）">${CLAUDE_MARK}</button><span class="claude-cap">Claude</span>
+        <button class="claude-btn" data-aimenu title="AI を開く（Claude・ChatGPT・Gemini・WorkOS）" aria-haspopup="menu">${CLAUDE_MARK}</button><span class="claude-cap">AI</span>
         <button class="me-btn" data-me title="プロフィール"></button>
       </nav>
       <aside class="side" aria-label="チャンネル">
@@ -33,6 +33,7 @@ const UI = {
     document.addEventListener("click", e => {
       const g = e.target.closest("[data-go]"); if (g) { this.go(g.dataset.go); return; }
       const bell = e.target.closest("[data-bell]"); if (bell) { this.openNotifs(bell); return; }
+      const aiBtn = e.target.closest("[data-aimenu]"); if (aiBtn) { openAiMenu(aiBtn); return; }
       if (e.target.closest("[data-claude]")) openClaude();
       if (e.target.closest("[data-me]")) showProfile(S.me.id);
       if (e.target.closest("[data-search]")) openSwitcher();

@@ -152,6 +152,32 @@ function openClaude(text) {
   window.open(url, "_blank", "noopener");
 }
 
+/* ---------- 「AI を開く」: Claude・ChatGPT・Gemini・WorkOS をここから開く（新しいタブ） ----------
+ * 文章を渡して開く「Claude に聞く」（openClaude）は、これまでどおり各画面に残す。WorkOS はこの PC の中で動くアプリなので、起動しているときだけ開ける */
+const AI_APPS = [
+  { id: "claude", name: "Claude", host: "claude.ai", url: "https://claude.ai/new", mark: CLAUDE_MARK, tone: "#c15f33", bg: "#fdf1ea" },
+  { id: "chatgpt", name: "ChatGPT", host: "chatgpt.com", url: "https://chatgpt.com/", mark: "GPT", tone: "#0f8f6f", bg: "#e6f6f1" },
+  { id: "gemini", name: "Gemini", host: "gemini.google.com", url: "https://gemini.google.com/app", mark: "✦", tone: "#3b6bd9", bg: "#e8eefc" },
+  { id: "workos", name: "WorkOS", host: "", url: "http://127.0.0.1:8920/", mark: "OS", tone: "#4b3fb0", bg: "#eeeafc", note: "この PC で WorkOS を起動しているときだけ開けます" },
+];
+let AI_MENU_CLOSED = 0;
+const aiMenuHTML = () => `<div class="ai-menu">${AI_APPS.map(a => `<a class="ai-item" href="${esc(a.url)}" target="_blank" rel="noopener" data-ai-open="${a.id}" style="--tone:${a.tone};--tbg:${a.bg}">
+  <span class="ai-mark">${a.mark}</span><span class="grow"><b>${a.name} を開く</b><small>${esc(a.note || a.host)}</small></span>${icon("share")}</a>`).join("")}</div>`;
+function openAiMenu(anchor) {
+  if (UI.isMobile) {
+    const ov = modal("AI を開く", aiMenuHTML());
+    ov.addEventListener("click", e => { if (e.target.closest("[data-ai-open]")) setTimeout(() => ov.close(), 0); });
+    return;
+  }
+  if (Date.now() - AI_MENU_CLOSED < 400) return;   // 開いているときにもう一度押すと閉じる（押した瞬間に外側クリックで閉じ、続く click で開き直さない）
+  const p = popover(anchor, aiMenuHTML());
+  p.classList.add("ai-pop");
+  anchor.addEventListener("mousedown", () => { if (_pop === p) AI_MENU_CLOSED = Date.now(); }, { once: true, capture: true });
+  const r = anchor.getBoundingClientRect();   // 左の帯のボタンの右側に、下端をそろえて出す
+  p.style.left = (r.right + 10) + "px"; p.style.top = "auto"; p.style.bottom = Math.max(8, innerHeight - r.bottom - 8) + "px";
+  p.addEventListener("click", e => { if (e.target.closest("[data-ai-open]")) closePop(); });
+}
+
 /* ---------- モーダル / ポップオーバー ---------- */
 function modal(title, body, { foot = "", wide = false, onClose, cls = "" } = {}) {
   closePop();

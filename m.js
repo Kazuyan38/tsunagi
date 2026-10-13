@@ -16,12 +16,13 @@ const UI = {
       <header class="m-head"><h1></h1>
         <button class="icon-btn bell-btn" data-bell aria-label="通知">${icon("bell")}<span class="badge alert" hidden></span></button>
         <button class="icon-btn" data-search aria-label="検索">${icon("search")}</button>
-        <button class="claude-pill" data-claude aria-label="Claude を開く">${CLAUDE_MARK}Claude</button></header>
+        <button class="claude-pill" data-aimenu aria-label="AI を開く">${CLAUDE_MARK}AI</button></header>
       <main class="m-main" id="main"></main>
       <nav class="m-tabs">${TABS.map(([k, l, i]) => `<button class="m-tab" data-tab="${k}">${icon(i)}<span>${l}</span><span class="badge" hidden></span></button>`).join("")}</nav></div>`;
     $(".m-head h1").before(owlBuddy(38));   // 見出しの左のフクロウ。押すと owl とのチャット
     document.addEventListener("click", e => {
       const t = e.target.closest(".m-tab[data-tab]"); if (t) return this.go(t.dataset.tab);
+      const aiBtn = e.target.closest("[data-aimenu]"); if (aiBtn) return openAiMenu(aiBtn);
       if (e.target.closest("[data-claude]")) return openClaude();
       if (e.target.closest("[data-search]")) return openSwitcher();
       if (e.target.closest(".m-head [data-bell]")) return this.push("通知", el => renderNotifPanel(el, { mobile: true }));
@@ -149,7 +150,7 @@ const UI = {
     main.innerHTML = `<div class="page"><div class="card" style="padding:16px;display:flex;gap:14px;align-items:center;margin-bottom:14px" data-me>${avatar(S.me, 52)}
       <div class="grow"><b style="font-size:17px">${esc(S.me.name)}</b><div class="small muted">${esc([S.me.title, S.me.dept].filter(Boolean).join(" · ") || "プロフィールを設定しましょう")}</div></div>${icon("chev")}</div>
       <div class="card list more-list" style="overflow:hidden">${items.map(([i, l, d], k) => `<button class="li" data-k="${k}">${icon(i)}<span class="grow"><div class="li-title">${l}</div><div class="li-sub">${d}</div></span>${icon("chev")}</button>`).join("")}</div>
-      <button class="card" data-claude style="width:100%;margin-top:14px;padding:16px;display:flex;gap:12px;align-items:center;text-align:left;background:linear-gradient(145deg,#fdf6f1,#f9e6db);border-color:#f1d8c8;color:#b4532a">${CLAUDE_MARK}<span class="grow"><b>Claude を開く</b><div class="small" style="opacity:.8">文章作成・要約・相談はここから</div></span>${icon("share")}</button>
+      <button class="card" data-aimenu style="width:100%;margin-top:14px;padding:16px;display:flex;gap:12px;align-items:center;text-align:left;background:linear-gradient(145deg,#fdf6f1,#f9e6db);border-color:#f1d8c8;color:#b4532a">${CLAUDE_MARK}<span class="grow"><b>AI を開く</b><div class="small" style="opacity:.8">Claude・ChatGPT・Gemini・WorkOS</div></span>${icon("chev")}</button>
       <a class="btn" href="pc.html" style="width:100%;margin-top:14px">PC 版で開く</a>
       <button class="btn danger" data-out style="width:100%;margin-top:8px">${icon("logout")} ログアウト</button></div>`;
     main.onclick = e => {

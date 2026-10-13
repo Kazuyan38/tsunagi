@@ -788,3 +788,14 @@ input.switch:checked::after { transform: translateX(16px); }
 /* 管理: owl の知識（RAG）の進み具合 */
 .rag-bar { height: 8px; border-radius: 8px; background: var(--bg-2); overflow: hidden; }
 .rag-bar i { display: block; height: 100%; background: var(--accent); border-radius: 8px; transition: width .4s ease; }
+
+/* AI を開く（Claude・ChatGPT・Gemini・WorkOS） */
+.ai-menu { display: grid; gap: 8px; }
+.ai-pop { width: min(330px, calc(100vw - 24px)); padding: 10px; }
+.ai-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); text-decoration: none; text-align: left; }
+.ai-item:hover { background: var(--bg); border-color: var(--line-2); }
+.ai-item b { display: block; font-size: 14px; }
+.ai-item small { display: block; color: var(--muted); font-size: 11.5px; margin-top: 1px; }
+.ai-item > .ico { width: 16px; height: 16px; color: var(--muted); flex: none; }
+.ai-mark { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; background: var(--tbg); color: var(--tone); font-weight: 800; font-size: 11px; letter-spacing: .02em; flex: none; }
+.ai-mark .ico { width: 20px; height: 20px; }
