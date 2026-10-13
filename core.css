@@ -857,7 +857,8 @@ input.switch:checked::after { transform: translateX(16px); }
 .nt-scope.shared { background: var(--accent-soft); color: var(--accent); }
 .nt-conflict { margin: 0 0 10px; padding: 10px 12px; border-radius: 12px; background: #fff4d6; color: #7a5200; font-size: 13px; display: grid; gap: 8px; }
 .nt-title { width: 100%; border: 0; outline: 0; background: transparent; font-size: 24px; font-weight: 800; padding: 6px 0; color: var(--ink); }
-.nt-body { width: 100%; flex: 1 1 auto; border: 0; outline: 0; background: transparent; resize: none; overflow-y: auto; font-size: 16px; line-height: 1.8; padding: 6px 0; min-height: 180px; color: var(--ink); font-family: inherit; overflow-wrap: anywhere; }
+/* 通知一覧の .nt-body（line-clamp で 2 行に切る）と同名。textarea に効くと行が重なるので、ここで打ち消す */
+.nt-ed .nt-body { display: block; -webkit-line-clamp: unset; -webkit-box-orient: initial; word-break: normal; width: 100%; flex: 1 1 auto; border: 0; outline: 0; background: transparent; resize: none; overflow-y: auto; font-size: 16px; line-height: 1.8; padding: 6px 0; min-height: 180px; color: var(--ink); font-family: inherit; overflow-wrap: anywhere; }
 .nt-atts-head { display: flex; align-items: center; gap: 10px; margin: 14px 0 8px; padding-top: 12px; border-top: 1px solid var(--line); }
 .nt-atts { display: flex; flex-wrap: wrap; gap: 10px; max-height: 200px; overflow-y: auto; }
 .nt-count { text-align: right; padding: 2px 0; } .nt-count.over { color: var(--danger); font-weight: 700; }
