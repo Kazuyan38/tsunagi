@@ -47,6 +47,8 @@ const P = {
   filter: '<path d="M4 6h16M7 12h10M10 18h4"/>',
   bell: '<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/>',
   pin: '<path d="M9 4h6l-1 5 3 3v2H7v-2l3-3z"/><path d="M12 14v6"/>',
+  note: '<path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/><path d="M9 12h6M9 16h6"/>',
+  poll: '<path d="M5 20V11M12 20V4M19 20v-6"/>',
   gear: '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
 };
 const icon = (name, cls = "ico") => `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[name] || ""}</svg>`;
@@ -145,6 +147,88 @@ function formatBody(text) {
   }
   s = s.replace(/\n/g, "<br>");
   return s.replace(/\u0000(\d+)\u0000/g, (_, i) => blocks[i]);
+}
+
+/* ---------- 投票（チャットのメッセージとして投稿される。件数はメッセージの meta、自分の票は poll_mine） ---------- */
+const POLL = { mine: {}, hydrated: new Set() };   // mine: { 投票の id: Set(選択肢の id) }
+const pollClosed = p => !!p.closed || (!!p.closes_at && new Date(p.closes_at) <= new Date());
+function pollLeft(iso) {
+  const ms = new Date(iso) - new Date(); if (ms <= 0) return "締め切り";
+  const h = Math.floor(ms / 36e5), d = Math.floor(h / 24);
+  return d >= 1 ? `あと ${d} 日` : h >= 1 ? `あと ${h} 時間` : `あと ${Math.max(1, Math.ceil(ms / 6e4))} 分`;
+}
+function pollHTML(p) {
+  const mine = POLL.mine[p.poll_id] || new Set(), closed = pollClosed(p), top = Math.max(0, ...p.options.map(o => o.n));
+  const pct = o => (p.total ? Math.round(o.n / p.total * 100) : 0);   // 複数選択でも「投票した人のうち何 %」
+  const canClose = !closed && (p.by === S.me.id || S.me.role === "admin");
+  return `<div class="poll${closed ? " closed" : ""}" data-pid="${p.poll_id}">
+    <div class="poll-k">${icon("poll")} 投票${closed ? "（締め切り済み）" : ""}</div>
+    <div class="poll-q">${esc(p.q)}</div>
+    <div class="poll-opts">${p.options.map(o => `<button class="po${mine.has(o.id) ? " on" : ""}${closed && top > 0 && o.n === top ? " win" : ""}" data-popt="${o.id}"${closed ? " disabled" : ""} aria-pressed="${mine.has(o.id)}">
+        <span class="bar" style="width:${pct(o)}%"></span><span class="chk" aria-hidden="true">${mine.has(o.id) ? icon("check") : ""}</span><span class="t">${esc(o.t)}</span><span class="n">${o.n}票 · ${pct(o)}%</span></button>`).join("")}</div>
+    <div class="poll-f"><span>${p.total} 人が投票</span><span>${p.multiple ? "複数選べます" : "1 つ選べます"}</span><span>${p.anonymous ? "無記名" : "記名"}</span>${!closed && p.closes_at ? `<span>${pollLeft(p.closes_at)}</span>` : ""}
+      ${!p.anonymous && p.total ? `<button class="linkbtn" data-pvoters>投票者を見る</button>` : ""}${canClose ? `<button class="linkbtn" data-pclose>締め切る</button>` : ""}</div></div>`;
+}
+/** 画面に出ている投票の「自分の票」をまとめて取り、印を付ける（描き直しはしない） */
+async function hydratePolls(root) {
+  const els = [...root.querySelectorAll(".poll[data-pid]")];
+  const need = [...new Set(els.map(e => +e.dataset.pid).filter(id => !POLL.hydrated.has(id)))];
+  if (need.length) {
+    try { const r = must(await SB.rpc("poll_mine", { p_ids: need })); need.forEach(id => { POLL.mine[id] = new Set(r[String(id)] || []); POLL.hydrated.add(id); }); } catch { return; }
+  }
+  for (const e of els) {
+    const mine = POLL.mine[+e.dataset.pid] || new Set();
+    $$("[data-popt]", e).forEach(b => { const on = mine.has(+b.dataset.popt); b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); $(".chk", b).innerHTML = on ? icon("check") : ""; });
+  }
+}
+async function votePoll(m, oid) {
+  const pid = m.meta.poll_id, mine = POLL.mine[pid] || (POLL.mine[pid] = new Set()), on = !mine.has(oid);
+  try {
+    const r = must(await SB.rpc("poll_vote", { p_poll: pid, p_option: oid, p_on: on }));
+    POLL.mine[pid] = new Set(r.mine); POLL.hydrated.add(pid);
+    handleWS({ type: "message_update", message: { ...m, meta: r.meta } });
+  } catch (e) { fail(e); }
+}
+async function pollClose(m) {
+  if (!(await confirmBox("この投票を締め切りますか？締め切ると、票を変えられなくなります。", "締め切る"))) return;
+  try { const meta = must(await SB.rpc("poll_close", { p_poll: m.meta.poll_id })); handleWS({ type: "message_update", message: { ...m, meta } }); toast("締め切りました"); } catch (e) { fail(e); }
+}
+async function pollVoters(meta) {
+  try {
+    const r = must(await SB.rpc("poll_voters", { p_poll: meta.poll_id }));
+    modal("投票者", `<div class="poll-voters">${meta.options.map(o => { const ids = r[String(o.id)] || [];
+      return `<div class="pv"><div class="pv-h"><b>${esc(o.t)}</b><span class="muted small">${ids.length} 人</span></div>${ids.length ? `<div class="pv-l">${ids.map(i => `<span class="pv-u">${avatar(U(i), 22)} ${esc(U(i).name)}</span>`).join("")}</div>` : `<div class="muted small">まだいません</div>`}</div>`; }).join("")}</div>`);
+  } catch (e) { fail(e); }
+}
+function pollDialog(cid) {
+  const opt = (v = "") => `<div class="pd-opt"><input class="input" maxlength="100" placeholder="選択肢" value="${esc(v)}" aria-label="選択肢"><button type="button" class="btn ghost icon sm" data-rm aria-label="この選択肢を消す">${icon("x")}</button></div>`;
+  const ov = modal("投票を作る", `<form class="pd">
+    <label class="field"><span>質問</span><input class="input" name="q" maxlength="200" placeholder="例: 次の定例は何曜日がいい？" autocomplete="off" autofocus></label>
+    <div class="field"><span>選択肢（2〜10 個）</span><div class="pd-opts">${opt()}${opt()}</div><button type="button" class="btn sm" data-add>${icon("plus")} 選択肢を足す</button></div>
+    <div class="pd-set"><label><input type="checkbox" name="multiple"> 複数選べる</label><label><input type="checkbox" name="anonymous"> 無記名（誰が入れたか見えない）</label>
+      <label>締め切り <select class="input" name="closes" style="width:auto"><option value="">なし</option><option value="1">1 時間後</option><option value="24">1 日後</option><option value="72">3 日後</option><option value="168">1 週間後</option></select></label></div></form>`,
+    { foot: `<button class="btn" data-c>やめる</button><button class="btn primary" data-s>投稿する</button>` });
+  const box = $(".pd-opts", ov), form = $(".pd", ov);
+  form.onsubmit = e => e.preventDefault();   // Enter での送信は選択肢の入力側で扱う（CSP でインラインの onsubmit は使えない）
+  const sync = () => { const n = $$(".pd-opt", box).length; $("[data-add]", ov).hidden = n >= 10; $$("[data-rm]", box).forEach(b => b.hidden = n <= 2); };
+  sync();
+  $("[data-add]", ov).onclick = () => { box.insertAdjacentHTML("beforeend", opt()); sync(); $$("input", box).at(-1).focus(); };
+  box.onclick = e => { const r = e.target.closest("[data-rm]"); if (r && $$(".pd-opt", box).length > 2) { r.closest(".pd-opt").remove(); sync(); } };
+  box.onkeydown = e => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); const ins = $$("input", box), i = ins.indexOf(e.target); if (i === ins.length - 1 && ins.length < 10) $("[data-add]", ov).click(); else ins[i + 1] && ins[i + 1].focus(); } };
+  $("[data-c]", ov).onclick = () => ov.close();
+  $("[data-s]", ov).onclick = async e => {
+    const q = form.q.value.trim(), options = $$("input", box).map(i => i.value.trim()).filter(Boolean);
+    if (!q) { toast("質問を入力してください", true); return form.q.focus(); }
+    if (new Set(options).size < 2) { toast("選択肢を 2 つ以上入れてください", true); return; }
+    const b = e.currentTarget; b.disabled = true;
+    try {
+      const h = +form.closes.value, mid = must(await SB.rpc("create_poll", { p_channel: cid, p_question: q, p_options: options, p_multiple: form.multiple.checked, p_anonymous: form.anonymous.checked, p_closes_at: h ? new Date(Date.now() + h * 36e5).toISOString() : null }));
+      ov.close();
+      const row = must(await SB.from("messages").select("*").eq("id", mid).single());
+      const [m] = await serialize([row], (S.cache[cid] && S.cache[cid].members) || []); handleWS({ type: "message", message: m });
+      toast("投票を投稿しました");
+    } catch (er) { fail(er); b.disabled = false; }
+  };
 }
 
 function openClaude(text) {
@@ -368,6 +452,7 @@ function msgHTML(m, prev, ch, memberIds) {
   const mention = !mine && ((m.body || "").includes("@" + S.me.name) || mentionsAll(m.body));
   let body = m.deleted ? `<div class="msg-body deleted">このメッセージは削除されました</div>` :
     (m.body ? `<div class="msg-body">${formatBody(m.body)}${m.edited_at ? ' <span class="small muted">(編集済み)</span>' : ""}</div>` : "");
+  if (m.meta && m.meta.kind === "poll" && !m.deleted) body = pollHTML(m.meta);   // 投票は本文（【投票】…）ではなく、カードで見せる
   if (m.reply) body = `<div class="msg-reply" data-jump="${m.reply.id}">↩ ${esc(U(m.reply.user_id).name)}: ${esc(m.reply.body || "（添付）")}</div>` + body;
   if (m.files.length) {
     body += `<div class="att-grid">${m.files.map(f => f.kind === "image"
@@ -385,8 +470,10 @@ function msgHTML(m, prev, ch, memberIds) {
   if (mine && !m.deleted) {
     const others = memberIds.filter(i => i !== S.me.id).length;
     const n = m.read_by.length;
-    if (ch.kind === "dm" && others === 1) read = n ? `<span class="read-mark all">既読</span>` : "";
-    else if (others) read = `<button class="read-mark${n >= others ? " all" : ""}" data-readers>${n >= others ? "全員既読" : `既読 ${n}/${others}`}</button>`;
+    const who = m.read_by.map(i => U(i).name).join("、");
+    const faces = n ? `<span class="rd-av">${m.read_by.slice(0, 4).map(i => avatar(U(i), 16, false)).join("")}${n > 4 ? `<i>+${n - 4}</i>` : ""}</span>` : "";
+    if (ch.kind === "dm" && others === 1) read = n ? `<span class="read-mark all" title="${esc(who)}">既読</span>` : "";
+    else if (others) read = `<button class="read-mark${n >= others ? " all" : ""}" data-readers title="${esc(who || "まだ誰も読んでいません")}">${faces}${n >= others ? "全員既読" : `既読 ${n}/${others}`}</button>`;
   }
   const pinned = !m.deleted && S.cache[ch.id] && S.cache[ch.id].pinSet && S.cache[ch.id].pinSet.has(m.id);
   const foot = (pinned ? `<span class="pin-mark">${icon("pin")}ピン留め</span>` : "") +
@@ -427,7 +514,7 @@ function renderMsgList(listEl, cid, { newSepAfter } = {}) {
   }
   if (!c.messages.length) html = `<div class="empty"><b>${esc(chName(ch))} のはじまり</b>最初のメッセージを送ってみましょう。ファイルはドラッグ＆ドロップか貼り付けで共有できます。</div>`;
   listEl.innerHTML = html;
-  hydrateFiles(listEl);
+  hydrateFiles(listEl); hydratePolls(listEl);
 }
 
 /** チャット画面を el に描画する。PC / スマホとも同じ部品を使い、ヘッダーだけ UI 側が差し込む。 */
@@ -444,6 +531,7 @@ async function renderChat(el, cid) {
       <div class="composer-bar">
         <button class="btn ghost icon sm" data-attach title="ファイルを添付">${icon("clip")}</button>
         <button class="btn ghost icon sm" data-emoji title="絵文字">${icon("smile")}</button>
+        <button class="btn ghost icon sm" data-poll title="投票を作る">${icon("poll")}</button>
         <span class="hint">${UI.isMobile ? "" : "Enter で送信 · Shift+Enter で改行 · @ でメンション（@all は全員に通知）"}</span>
         <button class="send-btn" data-send aria-label="送信" disabled>${icon("send")}</button>
       </div></div><input type="file" multiple hidden></div>
@@ -507,7 +595,7 @@ async function renderChat(el, cid) {
     const fresh = h(msgHTML(m, prev, S.cache[cid].channel, S.cache[cid].member_ids));
     reuseImgs(fresh, imgs);
     node.replaceWith(fresh);
-    hydrateFiles(fresh);
+    hydrateFiles(fresh); hydratePolls(fresh);
     if (atBottom) toBottom(); else restore(a);
     keep(a, atBottom);
   };
@@ -614,6 +702,9 @@ async function renderChat(el, cid) {
     if (t.closest("[data-user]")) return showProfile(t.closest("[data-user]").dataset.user);
     if (t.closest("[data-jump]")) { const n = $(`.msg[data-id="${t.closest("[data-jump]").dataset.jump}"]`, list); if (n) { n.scrollIntoView({ block: "center", behavior: "smooth" }); n.classList.add("flash"); setTimeout(() => n.classList.remove("flash"), 1700); } return; }
     if (!m) return;
+    const po = t.closest("[data-popt]"); if (po && m.meta && m.meta.kind === "poll") return votePoll(m, +po.dataset.popt);
+    if (t.closest("[data-pvoters]")) return pollVoters(m.meta);
+    if (t.closest("[data-pclose]")) return pollClose(m);
     if (t.closest("[data-react]")) return toggleReact(m.id, t.closest("[data-react]").dataset.react);
     if (t.closest("[data-addreact]")) return emojiPicker(t.closest("button"), em => toggleReact(m.id, em));
     if (t.closest("[data-readers]")) return showReaders(t.closest("button"), m, S.cache[cid]);
@@ -646,6 +737,7 @@ async function renderChat(el, cid) {
     const pinned = S.cache[cid].pinSet && S.cache[cid].pinSet.has(m.id);
     const acts = [
       [pinned ? "ピン留めを外す" : "ピン留めする", () => togglePin(m)],
+      ["既読を見る", () => modal("既読", readersHTML(m, S.cache[cid]))],
       ["コピー", () => navigator.clipboard.writeText(m.body || "").then(() => toast("コピーしました"))],
       ["別のチャンネルへ転送", () => pickChannel("転送先", async to => { await api(`/api/channels/${to}/messages`, { method: "POST", body: { body: `> ${U(m.user_id).name}: ${m.body}`, file_ids: m.files.map(f => f.id) } }); toast("転送しました"); })],
     ];
@@ -712,6 +804,7 @@ async function renderChat(el, cid) {
     catch (e) { ta.value = body; sync(); fail(e); }
   }
   sendBtn.onclick = send;
+  $("[data-poll]", el).onclick = () => pollDialog(cid);
   $("[data-emoji]", el).onclick = e => emojiPicker(e.currentTarget, em => { ta.setRangeText(em, ta.selectionStart, ta.selectionEnd, "end"); ta.focus(); sync(); });
 
   // ---- 添付（ボタン・ドラッグ＆ドロップ・貼り付け）
@@ -744,13 +837,15 @@ async function renderChat(el, cid) {
 }
 
 
-function showReaders(anchor, m, c) {
-  const others = c.member_ids.filter(i => i !== S.me.id);
-  const read = others.filter(i => m.read_by.includes(i)), unread = others.filter(i => !m.read_by.includes(i));
-  const row = ids => ids.map(i => `<div class="row" style="padding:4px 2px">${avatar(U(i), 24)}<span>${esc(U(i).name)}</span></div>`).join("") || `<div class="muted small" style="padding:4px 2px">なし</div>`;
-  popover(anchor, `<div style="min-width:200px;max-height:320px;overflow:auto"><div class="section-title">既読 ${read.length}</div>${row(read)}
-    <div class="section-title" style="margin-top:10px">未読 ${unread.length}</div>${row(unread)}</div>`);
+/** 既読の一覧（読んだ人・まだの人）。送った人は除く。「既読」は、その人が読み進めた位置がこのメッセージ以降かどうか */
+function readersHTML(m, c) {
+  const others = c.member_ids.filter(i => i !== m.user_id);
+  const read = others.filter(i => m.read_by.includes(i) || (i === S.me.id && m.user_id !== S.me.id)), unread = others.filter(i => !read.includes(i));
+  const row = ids => ids.map(i => `<div class="row" style="padding:4px 2px">${avatar(U(i), 24)}<span>${esc(U(i).name)}${i === S.me.id ? "（あなた）" : ""}</span></div>`).join("") || `<div class="muted small" style="padding:4px 2px">なし</div>`;
+  return `<div style="min-width:220px;max-height:60vh;overflow:auto"><div class="section-title">既読 ${read.length}</div>${row(read)}
+    <div class="section-title" style="margin-top:10px">まだ読んでいない ${unread.length}</div>${row(unread)}</div>`;
 }
+function showReaders(anchor, m, c) { popover(anchor, readersHTML(m, c)); }
 
 function pickChannel(title, onPick) {
   const list = [...S.channels].sort((a, b) => (b.last_at || "").localeCompare(a.last_at || ""));
@@ -825,6 +920,7 @@ async function openViewer(f, list = []) {
     <button class="btn sm claude" data-claude hidden>${CLAUDE_MARK} Claude に聞く</button>
     <button class="btn sm" data-share>${icon("share")} 共有</button>
     <a class="btn sm" data-dl target="_blank" rel="noopener">${icon("dl")} 保存</a>`;
+  $("[data-share]", extra).hidden = !!f.note_id;   // メモの添付は、メモの権限の中だけで見せる（チャンネルへは共有しない）
   $("[data-share]", extra).onclick = () => pickChannel(`「${f.name}」を共有`, async cid => { await api(`/api/files/${f.id}/share`, { method: "POST", body: { channel_id: cid } }); toast("共有しました"); });
   const st = $(".viewer-stage", stage);
   let url, dl;

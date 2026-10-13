@@ -145,6 +145,7 @@ const UI = {
       ["file", "ファイル", "共有された資料をまとめて見る", () => this.push("ファイル", el => renderFiles(el, { mobile: true }))],
       ["book", "リポジトリ", "会社の資料をさがす・読む", () => this.push("リポジトリ", el => renderRepo(el, { mobile: true }))],
       ["task", "タスク", "チームのタスクと自分のタスクバスター", () => this.push("タスク", el => renderTasks(el))],
+      ["note", "メモ", "自分のメモと共有メモ・画像や資料の添付", () => this.push("メモ", el => renderNotes(el, { mobile: true }))],
       ["user", "プロフィール", "表示名・状態・連絡先・パスワード", () => editProfile()],
       ...(S.me.role === "admin" ? [["info", "管理", "招待コード・メンバー・共有 Gmail・書き出し", () => this.push("管理", el => renderAdmin(el))]] : [])];
     main.innerHTML = `<div class="page"><div class="card" style="padding:16px;display:flex;gap:14px;align-items:center;margin-bottom:14px" data-me>${avatar(S.me, 52)}

@@ -1,5 +1,5 @@
 "use strict";
-const NAV = [["home", "ホーム", "home"], ["chat", "チャット", "chat"], ["mail", "メール", "mail"], ["calendar", "予定", "cal"], ["shifts", "シフト", "shift"], ["people", "連絡先", "people"], ["files", "ファイル", "file"], ["tasks", "タスク", "task"], ["repo", "リポジトリ", "book"]];
+const NAV = [["home", "ホーム", "home"], ["chat", "チャット", "chat"], ["mail", "メール", "mail"], ["calendar", "予定", "cal"], ["shifts", "シフト", "shift"], ["people", "連絡先", "people"], ["files", "ファイル", "file"], ["tasks", "タスク", "task"], ["notes", "メモ", "note"], ["repo", "リポジトリ", "book"]];
 const LOGO = `<img class="logo brand-owl" src="img/favicon-64.png" alt="owl" width="42" height="42">`;
 
 const UI = {
@@ -128,9 +128,9 @@ const UI = {
     S.cur = section === "chat" ? S.cur : null;
     $$(".rail-btn").forEach(b => b.classList.toggle("on", b.dataset.go === section));
     // メールとリポジトリは画面自体に一覧があるので、チャンネル一覧は一時的に隠す（保存した開閉設定は変えない）
-    $(".app").classList.toggle("own-list", ["mail", "repo"].includes(section));
+    $(".app").classList.toggle("own-list", ["mail", "repo", "notes"].includes(section));
     const main = $("#main"); main.className = "main"; main.scrollTop = 0;
-    const r = { home: renderHome, mail: el => renderMail(el), calendar: el => renderCalendar(el), shifts: el => renderShifts(el), people: renderPeople, files: el => renderFiles(el), tasks: el => renderTasks(el), repo: el => renderRepo(el), admin: renderAdmin }[section];
+    const r = { home: renderHome, mail: el => renderMail(el), calendar: el => renderCalendar(el), shifts: el => renderShifts(el), people: renderPeople, files: el => renderFiles(el), tasks: el => renderTasks(el), repo: el => renderRepo(el), notes: el => renderNotes(el), admin: renderAdmin }[section];
     r && r(main, arg);
     this.drawSide(); this.save();
   },
