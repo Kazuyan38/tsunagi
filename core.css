@@ -846,18 +846,21 @@ input.switch:checked::after { transform: translateX(16px); }
 .nt-t { display: flex; align-items: center; gap: 5px; font-weight: 700; font-size: 14px; } .nt-t > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .nt-t .ico { width: 14px; height: 14px; color: var(--accent); flex: none; }
 .nt-s { font-size: 12.5px; color: var(--ink-2); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nt-m { display: flex; gap: 10px; margin-top: 3px; font-size: 11.5px; color: var(--muted); } .nt-m .ico { width: 12px; height: 12px; vertical-align: -1px; }
-.nt-main { min-width: 0; min-height: 0; overflow-y: auto; }
-.nt-ed { max-width: 820px; margin: 0 auto; padding: 16px 24px 48px; }
-.notes.is-mobile .nt-ed, .m-push .nt-ed { padding: 10px 16px 40px; }
+.nt-main { min-width: 0; min-height: 0; overflow-y: auto; }   /* 本文は入力欄の中でスクロールする（長文でも、入力位置が画面から外れない） */
+.nt-ed { max-width: 820px; height: 100%; min-height: 520px; margin: 0 auto; padding: 16px 24px 20px; display: flex; flex-direction: column; }
+.nt-ed > * { flex: none; }
+.notes.is-mobile .nt-ed, .m-push .nt-ed { padding: 10px 16px 40px; height: auto; min-height: 0; display: block; }
+.m-push .nt-body { height: calc(100dvh - 330px); min-height: 240px; }
 .nt-ed.drop { outline: 2px dashed var(--accent); outline-offset: -8px; background: var(--accent-soft); }
 .nt-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
 .nt-scope { font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 99px; background: var(--bg-2); color: var(--ink-2); }
 .nt-scope.shared { background: var(--accent-soft); color: var(--accent); }
 .nt-conflict { margin: 0 0 10px; padding: 10px 12px; border-radius: 12px; background: #fff4d6; color: #7a5200; font-size: 13px; display: grid; gap: 8px; }
 .nt-title { width: 100%; border: 0; outline: 0; background: transparent; font-size: 24px; font-weight: 800; padding: 6px 0; color: var(--ink); }
-.nt-body { width: 100%; border: 0; outline: 0; background: transparent; resize: none; font-size: 16px; line-height: 1.8; padding: 6px 0; min-height: 220px; color: var(--ink); font-family: inherit; }
+.nt-body { width: 100%; flex: 1 1 auto; border: 0; outline: 0; background: transparent; resize: none; overflow-y: auto; font-size: 16px; line-height: 1.8; padding: 6px 0; min-height: 180px; color: var(--ink); font-family: inherit; overflow-wrap: anywhere; }
 .nt-atts-head { display: flex; align-items: center; gap: 10px; margin: 14px 0 8px; padding-top: 12px; border-top: 1px solid var(--line); }
-.nt-atts { display: flex; flex-wrap: wrap; gap: 10px; }
+.nt-atts { display: flex; flex-wrap: wrap; gap: 10px; max-height: 200px; overflow-y: auto; }
+.nt-count { text-align: right; padding: 2px 0; } .nt-count.over { color: var(--danger); font-weight: 700; }
 .nt-att { position: relative; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); cursor: pointer; }
 .nt-att.img { width: 132px; height: 132px; overflow: hidden; } .nt-att.img img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .nt-att.file { display: flex; align-items: center; gap: 8px; padding: 8px 30px 8px 10px; max-width: 280px; }

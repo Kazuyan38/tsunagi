@@ -1,15 +1,19 @@
 /* owl — メモ（自分のメモ・共有メモ）。本文は自動保存。画像・資料を添付できる。
  * 自分のメモは本人だけ、共有メモはチームの全員が読み書きできる（守っているのは DB の RLS。画面の絞り込みは表示の都合）。
- * 添付は note_files（メモが見える人にだけ見える）。実体は Storage の「<team>/notes/<乱数>.<拡張子>」。 */
+ * 添付は note_files（メモが見える人にだけ見える）。実体は Storage の「<team>/notes/<乱数>.<拡張子>」。
+ * 長文でも重くならないよう、一覧には先頭 300 字（preview）だけを持ち、本文はメモを開いたときに取る。本文は 10 万字まで。 */
 "use strict";
 
-const NOTES = { scope: "personal", q: "", list: [], cur: null, dirty: false, timer: null, saving: false, again: false, poll: null, el: null, ed: null, mobile: false, busy: 0 };
-const NOTE_SEL = "id,team_id,owner_id,scope,title,body,pinned,created_at,updated_at,updated_by,note_files(id,note_id,name,mime,size,path,kind,uploader_id,created_at)";
-const NOTE_MAX_FILES = 30;
+const NOTES = { scope: "personal", q: "", hits: null, list: [], cur: null, dirty: false, timer: null, saving: false, again: false, fails: 0, poll: null, el: null, ed: null, mobile: false, busy: 0, searchT: null };
+const NOTE_FILES = "note_files(id,note_id,name,mime,size,path,kind,uploader_id,created_at)";
+const NOTE_LIST = `id,team_id,owner_id,scope,title,preview,pinned,created_at,updated_at,updated_by,${NOTE_FILES}`;   // 一覧用（本文は含めない）
+const NOTE_SEL = `id,team_id,owner_id,scope,title,body,preview,pinned,created_at,updated_at,updated_by,${NOTE_FILES}`;   // 開いたとき・競合の確認用（本文あり）
+const NOTE_MAX_FILES = 30, NOTE_MAX_CHARS = 100000;
 const noteById = id => NOTES.list.find(n => n.id === id);
-const noteLabel = n => (n.title || "").trim() || ((n.body || "").split("\n").find(l => l.trim()) || "").trim().slice(0, 40) || "無題のメモ";
+const noteHead = n => (typeof n.body === "string" ? n.body.slice(0, 600) : n.preview) || "";   // 一覧の表示に使う先頭部分（本文を読み込み済みならそちら）
+const noteLabel = n => (n.title || "").trim() || (noteHead(n).split("\n").find(l => l.trim()) || "").trim().slice(0, 40) || "無題のメモ";
 const noteSnippet = n => {
-  const lines = (n.body || "").split("\n").map(l => l.trim()).filter(Boolean);
+  const lines = noteHead(n).split("\n").map(l => l.trim()).filter(Boolean);
   const skip = (n.title || "").trim() ? 0 : 1;   // タイトルが空なら、最初の行は見出し代わりに使っている
   return lines.slice(skip).join(" ").slice(0, 80);
 };
@@ -18,15 +22,33 @@ const noteWhen = iso => { const d = new Date(iso), t = new Date(); return d.toDa
 const noteWhenFull = iso => { const d = new Date(iso); return `${d.getMonth() + 1}/${d.getDate()} ${p2(d.getHours())}:${p2(d.getMinutes())}`; };
 const notesOf = scope => NOTES.list.filter(n => (scope === "shared" ? n.scope === "shared" : n.scope === "personal" && n.owner_id === S.me.id));
 
-async function notesLoad() {
-  NOTES.list = must(await SB.from("notes").select(NOTE_SEL).order("pinned", { ascending: false }).order("updated_at", { ascending: false }).limit(500));
+async function notesFetchList() {
+  return must(await SB.from("notes").select(NOTE_LIST).order("pinned", { ascending: false }).order("updated_at", { ascending: false }).limit(500));
+}
+async function notesLoad() { NOTES.list = await notesFetchList(); }
+
+/** 検索: タイトル・先頭部分・添付の名前は手元で、本文の全体は DB に探してもらう（一覧に本文を持たないので） */
+function notesSearch() {
+  clearTimeout(NOTES.searchT);
+  const q = NOTES.q.trim();
+  if (!q) { NOTES.hits = null; return notesDrawList(); }
+  NOTES.searchT = setTimeout(async () => {
+    const terms = q.replace(/[,()*%\\"]/g, " ").split(/\s+/).filter(Boolean).slice(0, 5);
+    try {
+      let qb = SB.from("notes").select("id").limit(500);
+      for (const t of terms) qb = qb.or(`title.ilike.%${t}%,body.ilike.%${t}%`);   // 語ごとに「タイトルか本文に含む」を重ねる（すべての語を含むもの）
+      NOTES.hits = new Set(must(await qb).map(r => r.id));
+    } catch { NOTES.hits = new Set(); }
+    if (NOTES.q.trim() === q) notesDrawList();
+  }, 280);
+  notesDrawList();
 }
 
 /* ---------------------------------------------------------------- 一覧 */
 function notesDrawList() {
   const side = NOTES.el && $(".nt-side", NOTES.el); if (!side) return;
   const q = NOTES.q.trim().toLowerCase();
-  const match = n => !q || (noteLabel(n) + " " + (n.body || "") + " " + n.note_files.map(f => f.name).join(" ")).toLowerCase().includes(q);
+  const match = n => !q || (NOTES.hits && NOTES.hits.has(n.id)) || (noteLabel(n) + " " + noteHead(n) + " " + n.note_files.map(f => f.name).join(" ")).toLowerCase().includes(q);
   const mine = notesOf("personal"), shared = notesOf("shared");
   $$(".nt-tabs [data-sc]", side).forEach(b => {
     b.classList.toggle("on", b.dataset.sc === NOTES.scope); b.setAttribute("aria-selected", b.dataset.sc === NOTES.scope);
@@ -42,7 +64,7 @@ function notesDrawList() {
 
 /* ---------------------------------------------------------------- 画面 */
 async function renderNotes(el, { mobile = false } = {}) {
-  NOTES.el = el; NOTES.mobile = mobile; NOTES.cur = null; NOTES.dirty = false; NOTES.ed = null; NOTES.q = "";
+  NOTES.el = el; NOTES.mobile = mobile; NOTES.cur = null; NOTES.dirty = false; NOTES.ed = null; NOTES.q = ""; NOTES.hits = null; NOTES.fails = 0;
   try { const s = localStorage.getItem("tsunagi_notes_scope"); if (s === "shared" || s === "personal") NOTES.scope = s; } catch { }
   el.innerHTML = `<div class="notes${mobile ? " is-mobile" : ""}">
     <section class="nt-side">
@@ -59,7 +81,7 @@ async function renderNotes(el, { mobile = false } = {}) {
     NOTES.scope = b.dataset.sc; try { localStorage.setItem("tsunagi_notes_scope", NOTES.scope); } catch { }
     notesDrawList();
   });
-  $(".nt-search input", side).oninput = e => { NOTES.q = e.target.value; notesDrawList(); };
+  $(".nt-search input", side).oninput = e => { NOTES.q = e.target.value; notesSearch(); };
   $(".nt-list", side).onclick = e => { const r = e.target.closest("[data-note]"); if (r) notesOpen(+r.dataset.note); };
   S.screenOff = () => { notesFlush(); clearInterval(NOTES.poll); NOTES.el = null; NOTES.ed = null; };   // PC: 別の画面へ移るとき
   try { await notesLoad(); } catch (e) { $(".nt-list", side).innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
@@ -76,14 +98,20 @@ async function notesNew() {
   } catch (e) { fail(e); }
 }
 
-/** メモを開く（PC は右の欄、スマホは重ねる画面） */
-function notesOpen(id, focus = false) {
+/** メモを開く（PC は右の欄、スマホは重ねる画面）。本文は、開くときに取ってくる */
+async function notesOpen(id, focus = false) {
   const n = noteById(id); if (!n) return;
   notesFlush();
   NOTES.cur = id; try { localStorage.setItem("tsunagi_note", String(id)); } catch { }
   notesDrawList();
-  if (NOTES.mobile) return UI.push(noteLabel(n), el => notesEditor(el, id, focus), { kind: "note" });
-  notesEditor($(".nt-main", NOTES.el), id, focus);
+  const show = el => notesEditor(el, id, focus);
+  if (typeof n.body !== "string") {   // まだ本文を読み込んでいない
+    try { const full = must(await SB.from("notes").select(NOTE_SEL).eq("id", id).single()); Object.assign(n, full); }
+    catch (e) { return fail(e); }
+    if (NOTES.cur !== id) return;   // 取っている間に別のメモへ移った
+  }
+  if (NOTES.mobile) return UI.push(noteLabel(n), show, { kind: "note" });
+  show($(".nt-main", NOTES.el));
 }
 
 /* ---------------------------------------------------------------- 編集 */
@@ -98,16 +126,23 @@ function notesEditor(el, id, focus) {
       ${canDel ? `<button class="btn ghost icon sm" data-del title="削除" aria-label="削除">${icon("trash")}</button>` : ""}</div>
     <div class="nt-conflict" hidden></div>
     <input class="nt-title" maxlength="200" placeholder="タイトル" aria-label="タイトル" value="${esc(n.title)}">
-    <textarea class="nt-body" placeholder="ここに書きます。画像や資料は、貼り付け・ドラッグ・下の「添付」で追加できます" aria-label="本文">${esc(n.body)}</textarea>
+    <textarea class="nt-body" maxlength="${NOTE_MAX_CHARS}" placeholder="ここに書きます。画像や資料は、貼り付け・ドラッグ・下の「添付」で追加できます" aria-label="本文">${esc(n.body)}</textarea>
+    <div class="nt-count small muted" hidden></div>
     <div class="nt-atts-head"><button class="btn sm" data-attach>${icon("clip")} 添付</button><span class="small muted">画像・PDF・Office など（1 つ ${TSUNAGI.maxUploadMB}MB まで、${NOTE_MAX_FILES} 個まで）</span></div>
     <div class="nt-atts"></div>
     <div class="nt-foot small muted"></div>
     <input type="file" multiple hidden></div>`;
-  const ed = $(".nt-ed", el), title = $(".nt-title", ed), body = $(".nt-body", ed);
-  const grow = () => { body.style.height = "auto"; body.style.height = Math.max(220, body.scrollHeight + 4) + "px"; };
-  grow(); notesFoot(n); notesAttDraw(n);
+  const ed = $(".nt-ed", el), title = $(".nt-title", ed), body = $(".nt-body", ed), count = $(".nt-count", ed);
+  notesFoot(n); notesAttDraw(n);
+  const counter = () => {   // 10 万字の上限が近づいたら知らせる（入力欄は上限で止まる）
+    const left = NOTE_MAX_CHARS - body.value.length;
+    count.hidden = left > 10000;
+    count.textContent = left <= 0 ? `文字数の上限（${NOTE_MAX_CHARS.toLocaleString()} 字）に達しました。これ以上は入力できません。分けて別のメモにしてください` : `あと ${left.toLocaleString()} 字まで`;
+    count.classList.toggle("over", left <= 0);
+  };
+  counter();
   const dirty = () => { NOTES.dirty = true; notesState("未保存"); clearTimeout(NOTES.timer); NOTES.timer = setTimeout(notesSave, 700); };
-  title.oninput = dirty; body.oninput = () => { grow(); dirty(); };
+  title.oninput = dirty; body.oninput = () => { counter(); dirty(); if (body.selectionStart === body.value.length) body.scrollTop = body.scrollHeight; };   // 長文の末尾で書くとき、入力位置を画面内に保つ
   title.onblur = body.onblur = () => notesSave();
   title.onkeydown = e => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); body.focus(); } };
   $("[data-pin]", ed).onclick = () => notesPatch(n, { pinned: !n.pinned }, () => notesOpenAgain(n.id));
@@ -124,7 +159,11 @@ function notesEditor(el, id, focus) {
   const fileIn = $("input[type=file]", ed);
   $("[data-attach]", ed).onclick = () => fileIn.click();
   fileIn.onchange = () => { notesAttach(n, [...fileIn.files]); fileIn.value = ""; };
-  body.addEventListener("paste", e => { const fs = [...(e.clipboardData ? e.clipboardData.files : [])]; if (fs.length) { e.preventDefault(); notesAttach(n, fs); } });
+  body.addEventListener("paste", e => {
+    const fs = [...(e.clipboardData ? e.clipboardData.files : [])]; if (fs.length) { e.preventDefault(); return notesAttach(n, fs); }
+    const text = e.clipboardData ? e.clipboardData.getData("text") : "";   // 上限を超える貼り付けは、入りきらない分が切れるので知らせる
+    if (text && body.value.length - (body.selectionEnd - body.selectionStart) + text.length > NOTE_MAX_CHARS) toast(`貼り付けた文章が長すぎます。${NOTE_MAX_CHARS.toLocaleString()} 字を超えた分は入りません`, true);
+  });
   ed.addEventListener("dragover", e => { if ([...(e.dataTransfer?.types || [])].includes("Files")) { e.preventDefault(); ed.classList.add("drop"); } });
   ed.addEventListener("dragleave", e => { if (!ed.contains(e.relatedTarget)) ed.classList.remove("drop"); });
   ed.addEventListener("drop", e => { ed.classList.remove("drop"); const fs = [...(e.dataTransfer?.files || [])]; if (fs.length) { e.preventDefault(); notesAttach(n, fs); } });
@@ -141,24 +180,31 @@ function notesFoot(n) {
   f.textContent = `作成 ${U(n.owner_id).name}（${noteWhenFull(n.created_at)}）${n.updated_by ? ` · 更新 ${U(n.updated_by).name}（${noteWhenFull(n.updated_at)}）` : ""}`;
 }
 
-/** 本文・タイトルの保存。同時に 2 回走らせず、他の人が先に更新していたら上書きせずに知らせる */
-async function notesSave() {
+/** 本文・タイトルの保存。同時に 2 回走らせず、他の人が先に更新していたら上書きせずに知らせる。
+ *  失敗したときは、勝手に何度も送り直さない（数秒おきに 3 回まで。それでも駄目なら、入力の続きか「いま保存」で再試行） */
+async function notesSave(manual = false) {
   clearTimeout(NOTES.timer);
   if (!NOTES.dirty) return;
   if (NOTES.saving) { NOTES.again = true; return; }
   const n = noteById(NOTES.cur), ed = NOTES.ed && $(".nt-ed", NOTES.ed); if (!n || !ed || +ed.dataset.id !== n.id) { NOTES.dirty = false; return; }
-  const patch = { title: $(".nt-title", ed).value, body: $(".nt-body", ed).value };
+  const patch = { title: $(".nt-title", ed).value, body: $(".nt-body", ed).value.slice(0, NOTE_MAX_CHARS) };
   NOTES.dirty = false; NOTES.saving = true; notesState("保存中…");
   try {
-    const { data, error } = await SB.from("notes").update(patch).eq("id", n.id).eq("updated_at", n.updated_at).select(NOTE_SEL).maybeSingle();
+    const { data, error } = await SB.from("notes").update(patch).eq("id", n.id).eq("updated_at", n.updated_at).select(NOTE_LIST).maybeSingle();   // 返ってくるのは本文を除いた分（本文は送ったものを持っている）
     if (error) throw error;
     if (!data) { NOTES.saving = false; return notesConflict(n, patch); }
-    Object.assign(n, data); notesState("保存しました"); notesFoot(n); notesDrawList();
-  } catch (e) { NOTES.dirty = true; notesState("保存できませんでした"); fail(e); }
+    Object.assign(n, data, patch); NOTES.fails = 0; notesState("保存しました"); notesFoot(n); notesDrawList();
+  } catch (e) {
+    NOTES.dirty = true; NOTES.fails++;
+    const retry = NOTES.fails <= 3;
+    notesState(retry ? "保存できませんでした。もう一度試します…" : "保存できていません（入力を続けると再試行します）");
+    if (NOTES.fails === 1 || !retry) fail(e);
+    if (retry) NOTES.timer = setTimeout(notesSave, 4000 * NOTES.fails);
+  }
   NOTES.saving = false;
-  if (NOTES.again || NOTES.dirty) { NOTES.again = false; NOTES.timer = setTimeout(notesSave, 300); }
+  if (NOTES.fails === 0 && (NOTES.again || NOTES.dirty)) { NOTES.again = false; NOTES.timer = setTimeout(notesSave, 300); }
 }
-function notesFlush() { clearTimeout(NOTES.timer); if (NOTES.dirty) notesSave(); }
+function notesFlush() { clearTimeout(NOTES.timer); if (NOTES.dirty) { NOTES.fails = 0; notesSave(); } }
 
 /** 他の人が先に更新していた。自分の内容で上書きするか、最新を読み込むかを選んでもらう */
 async function notesConflict(n, mine) {
@@ -173,9 +219,9 @@ async function notesConflict(n, mine) {
     <span><button class="btn sm primary" data-ow>自分の内容で上書き</button> <button class="btn sm" data-ld>最新を読み込む（自分の編集は捨てる）</button></span>`;
   $("[data-ow]", bar).onclick = async () => {
     try {
-      const { data, error } = await SB.from("notes").update(mine).eq("id", n.id).eq("updated_at", latest.updated_at).select(NOTE_SEL).maybeSingle();
+      const { data, error } = await SB.from("notes").update(mine).eq("id", n.id).eq("updated_at", latest.updated_at).select(NOTE_LIST).maybeSingle();
       if (error) throw error; if (!data) return notesConflict(n, mine);
-      Object.assign(n, data); bar.hidden = true; notesState("保存しました"); notesFoot(n); notesDrawList();
+      Object.assign(n, data, mine); bar.hidden = true; notesState("保存しました"); notesFoot(n); notesDrawList();
     } catch (e) { fail(e); }
   };
   $("[data-ld]", bar).onclick = () => { Object.assign(n, latest); NOTES.dirty = false; notesOpenAgain(n.id); };
@@ -183,9 +229,10 @@ async function notesConflict(n, mine) {
 
 async function notesPatch(n, patch, done) {
   try {
-    const data = must(await SB.from("notes").update(patch).eq("id", n.id).select(NOTE_SEL).single());
+    const data = must(await SB.from("notes").update(patch).eq("id", n.id).select(NOTE_LIST).single());
     const keepTitle = n.title, keepBody = n.body; Object.assign(n, data);
-    if (NOTES.dirty) { n.title = keepTitle; n.body = keepBody; }   // まだ保存していない編集は、画面の値を残す
+    if (typeof keepBody === "string") n.body = keepBody;   // 本文は返ってこない。手元の分を残す
+    if (NOTES.dirty) n.title = keepTitle;                  // まだ保存していない編集は、画面の値を残す
     NOTES.list.sort((a, b) => (b.pinned - a.pinned) || (b.updated_at || "").localeCompare(a.updated_at || ""));
     done && done();
   } catch (e) { fail(e); }
@@ -262,14 +309,17 @@ async function notesDetach(n, fid) {
   } catch (e) { fail(e); }
 }
 
-/* ---------------------------------------------------------------- 他の人の更新を取り込む（20 秒おき） */
+/* ---------------------------------------------------------------- 他の人の更新を取り込む（20 秒おき。一覧だけ取り、変わったメモの本文だけ取り直す） */
 async function notesRefresh() {
   if (NOTES.saving) return;
-  let rows; try { rows = must(await SB.from("notes").select(NOTE_SEL).order("pinned", { ascending: false }).order("updated_at", { ascending: false }).limit(500)); } catch { return; }
-  const cur = NOTES.cur, old = noteById(cur);
-  NOTES.list = rows;
+  let rows; try { rows = await notesFetchList(); } catch { return; }
+  const cur = NOTES.cur, old = noteById(cur), oldBy = new Map(NOTES.list.map(n => [n.id, n]));
+  // 変わっていないメモは、読み込み済みの本文を引き継ぐ
+  NOTES.list = rows.map(r => { const o = oldBy.get(r.id); return o && o.updated_at === r.updated_at && typeof o.body === "string" ? { ...r, body: o.body } : r; });
   const now = noteById(cur);
   if (cur && old && !now) { NOTES.cur = null; if (NOTES.ed && !NOTES.mobile) NOTES.ed.innerHTML = `<div class="empty"><b>このメモは削除されたか、見られなくなりました</b></div>`; }
-  else if (now && old && now.updated_at !== old.updated_at && !NOTES.dirty) notesOpenAgain(cur);   // 手元に未保存の編集があるときは触らない（保存のときに知らせる）
+  else if (now && old && now.updated_at !== old.updated_at && !NOTES.dirty) {   // 開いているメモを他の人が更新した（手元に未保存の編集があるときは触らない。保存のときに知らせる）
+    try { Object.assign(now, must(await SB.from("notes").select(NOTE_SEL).eq("id", cur).single())); notesOpenAgain(cur); } catch { }
+  }
   notesDrawList();
 }
