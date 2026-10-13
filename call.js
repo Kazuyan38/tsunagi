@@ -140,6 +140,9 @@ const OwlCall = (() => {
     cur.stopSelf = watch(stream, on => { if (cur && cur.speaking !== on) { cur.speaking = on; draw(); } });
     startTick();
     await send(r.cid, id, r.ids, "accept");
+    // 2 人通話では、UID の大きい側が offer を作る。着信側が大きい場合は
+    // 発信者を明示的に offer 対象にしないと、両者とも offer を送らず止まる。
+    if (S.me.id > r.from) await offerTo(r.from);
     for (const uid of cur.accepted) if (S.me.id > uid) await offerTo(uid);   // 先に応答していた人へ。offer を出すのは uid の大きい側
     draw();
   };
